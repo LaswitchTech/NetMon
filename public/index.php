@@ -3,6 +3,25 @@
 declare(strict_types=1);
 
 // ---------------------------------------------------------------------------
+// Imports — resolved at compile time; autoloader handles runtime loading
+// ---------------------------------------------------------------------------
+use App\Auth\AuthService;
+use App\Auth\LocalAuthProvider;
+use App\Auth\TokenService;
+use App\Core\Config;
+use App\Core\Container;
+use App\Core\Env;
+use App\Core\ErrorHandler;
+use App\Core\Gate;
+use App\Core\Installer\InstallLock;
+use App\Core\Logger;
+use App\Core\Router;
+use App\Core\SQLiteDriver;
+use App\Models\TokenRepository;
+use App\Models\UserRepository;
+use App\Modules\Setup\Controllers\SetupController;
+
+// ---------------------------------------------------------------------------
 // Autoloader
 // ---------------------------------------------------------------------------
 spl_autoload_register(function (string $class): void {
@@ -24,8 +43,6 @@ spl_autoload_register(function (string $class): void {
 // ---------------------------------------------------------------------------
 // Environment — must run before Config or InstallLock
 // ---------------------------------------------------------------------------
-use App\Core\Env;
-
 Env::load(__DIR__ . '/../.env');
 
 // ---------------------------------------------------------------------------
@@ -40,8 +57,6 @@ Env::load(__DIR__ . '/../.env');
 //   [C] Installed     + /setup request     → 403 Forbidden
 //   [D] Installed     + non-setup request  → normal application boot (falls through)
 // ---------------------------------------------------------------------------
-use App\Core\Installer\InstallLock;
-use App\Modules\Setup\Controllers\SetupController;
 
 $installLock = new InstallLock(__DIR__ . '/../storage');
 
@@ -98,18 +113,6 @@ if ($isSetupPath) {
 // ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
-use App\Auth\AuthService;
-use App\Auth\LocalAuthProvider;
-use App\Auth\TokenService;
-use App\Core\Config;
-use App\Core\Container;
-use App\Core\ErrorHandler;
-use App\Core\Gate;
-use App\Core\Logger;
-use App\Core\Router;
-use App\Core\SQLiteDriver;
-use App\Models\TokenRepository;
-use App\Models\UserRepository;
 
 // Error handling — register before any code that can throw
 $logger  = new Logger(__DIR__ . '/../storage/logs');

@@ -48,6 +48,7 @@ class SetupController
             $method === 'POST' && $path === '/setup/config'   => $this->handlePostConfig(),
             $method === 'POST' && $path === '/setup/admin'    => $this->handlePostAdmin(),
             $method === 'POST' && $path === '/setup/install'  => $this->handlePostInstall(),
+            $method === 'GET'  && $path === '/setup/done'     => $this->handleGetDone(),
             default                                           => $this->notFound(),
         };
     }
@@ -72,6 +73,46 @@ class SetupController
         http_response_code(200);
         header('Content-Type: text/html; charset=utf-8');
         require $this->viewsPath . '/wizard.php';
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /setup/done — installation complete confirmation
+    // -------------------------------------------------------------------------
+
+    private function handleGetDone(): void
+    {
+        $appName    = Env::get('APP_NAME', 'NetMon');
+        $currentUrl = Env::get('APP_URL', '');
+
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        echo <<<HTML
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Setup Complete &mdash; {$appName}</title>
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+        </head>
+        <body class="bg-light">
+          <div class="container py-5" style="max-width:520px">
+            <div class="card shadow-sm">
+              <div class="card-body p-4 text-center">
+                <i class="bi bi-check-circle-fill text-success" style="font-size:3.5rem"></i>
+                <h1 class="h4 fw-semibold mt-3 mb-2">Installation Complete</h1>
+                <p class="text-muted mb-4">{$appName} has been installed successfully.</p>
+                <a href="{$currentUrl}/" class="btn btn-primary">
+                  <i class="bi bi-box-arrow-in-right me-1"></i> Go to Application
+                </a>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+        HTML;
+        exit;
     }
 
     // -------------------------------------------------------------------------
