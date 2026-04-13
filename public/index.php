@@ -41,6 +41,7 @@ Env::load(__DIR__ . '/../.env');
 //   [D] Installed     + non-setup request  → normal application boot (falls through)
 // ---------------------------------------------------------------------------
 use App\Core\Installer\InstallLock;
+use App\Modules\Setup\Controllers\SetupController;
 
 $installLock = new InstallLock(__DIR__ . '/../storage');
 
@@ -57,7 +58,6 @@ if (!$installLock->isInstalled()) {
     }
 
     // [B] Not installed and already on /setup — dispatch to the setup wizard
-    use App\Modules\Setup\Controllers\SetupController;
     $rootPath = realpath(__DIR__ . '/..');
     (new SetupController($rootPath))->dispatch($method, $requestPath);
     exit;
