@@ -106,6 +106,8 @@ When working:
    - next steps
 5. Create and update documentation in /docs along the way when architecture, workflows, services, migrations, or usage patterns are introduced
 6. When reference assets exist under /docs/reference, review and adapt them thoughtfully instead of copying them directly into production code
+7. If a task is interrupted or incomplete, prioritize repairing and completing the existing implementation instead of rewriting it
+8. Never leave partially implemented routing or boot logic in a broken state — ensure all entry points remain functional
 
 ---
 

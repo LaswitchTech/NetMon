@@ -1,0 +1,32 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Ensure we are in the correct base (important for MAMP / subpaths)
+    RewriteBase /
+
+    # If the request is for an existing file, serve it directly
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # If the request is for an existing directory, serve it directly
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Otherwise route everything to index.php
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Optional: deny access to hidden files (.env, etc.)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Optional: basic security headers (safe defaults)
+<IfModule mod_headers.c>
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Optional: prevent directory listing
+Options -Indexes
