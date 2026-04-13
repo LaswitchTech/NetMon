@@ -151,3 +151,7 @@ When working:
   - APP_INSTALLED
   - DB_SQLITE_PATH (or equivalent SQLite path setting)
 - Until MySQLDriver exists, installer flows should present MySQL/MariaDB as planned but unavailable
+- scripts/uninstall.php should be used for development/testing resets
+- The uninstall/reset flow should remove only local install artifacts and preserve baseline project files
+- After a successful reset, /setup should be reachable again
+- Installer and uninstall flows should respect the configured APP_URL, which may be a custom local development host such as https://netmon.local
