@@ -1,15 +1,17 @@
 composer.phar
 /vendor/
 
+# macOS
+.DS_Store
+
 # Environment — never commit secrets or local settings
 .env
 /config/local.php
 
-# Installation lock — managed by the installer
-/storage/installed.lock
+# Runtime files
+storage/installed.lock
+data/*.db
 
-# SQLite database
-/data/*.db
-
-# macOS
-.DS_Store
+# Logs
+storage/logs/*
+!storage/logs/.gitkeep
