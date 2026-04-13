@@ -1,0 +1,1723 @@
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Manage available chatrooms, routing, and visibility.">
+  <meta name="dashboard:layout" content="dashboard">
+  <meta name="dashboard:theme" content="default">
+  <meta name="html:lang" content="en">
+  <title>Chat Manager</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css">
+
+<style>
+  :root {
+    --app-bg: #0f1115;
+    --app-panel: #171a21;
+    --app-panel-2: #1d212b;
+    --app-panel-3: #252b36;
+    --app-border: #2f3744;
+    --app-text: #e9ecef;
+    --app-text-muted: #9aa4b2;
+    --app-primary: #0d6efd;
+    --app-sidebar-width: 280px;
+    --app-topbar-height: 72px;
+    --app-radius: 0.85rem;
+    --app-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.22);
+    --chat-bg: #15171c;
+    --chat-panel: #1d2128;
+    --chat-panel-2: #232833;
+    --chat-border: rgba(255,255,255,0.08);
+    --chat-text: #f1f3f5;
+    --chat-muted: #9aa4b2;
+    --chat-accent: #0d6efd;
+    --chat-shadow: 0 20px 50px rgba(0,0,0,0.35);
+    --chat-radius: 1.25rem;
+  }
+
+  html,
+  body {
+    min-height: 100%;
+    background: var(--app-bg);
+    color: var(--app-text);
+  }
+
+  body.app-body {
+    margin: 0;
+    background:
+      radial-gradient(circle at top left, rgba(13,110,253,0.10), transparent 28%),
+      radial-gradient(circle at bottom right, rgba(111,66,193,0.10), transparent 24%),
+      var(--app-bg);
+    color: var(--app-text);
+  }
+
+  .app-body a {
+    text-decoration: none;
+  }
+
+  .app-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: stretch;
+  }
+
+  .app-sidebar {
+    width: var(--app-sidebar-width);
+    min-width: var(--app-sidebar-width);
+    background: rgba(23, 26, 33, 0.92);
+    border-right: 1px solid var(--app-border);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    backdrop-filter: blur(14px);
+    z-index: 1030;
+  }
+
+  .app-sidebar-brand {
+    padding: 1.25rem 1.25rem 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .app-sidebar-brand-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.01em;
+  }
+
+  .app-sidebar-brand-link:hover {
+    color: #fff;
+    opacity: 0.95;
+  }
+
+  .app-sidebar-nav {
+    padding: 1rem 0.75rem 1.25rem;
+  }
+
+  .app-sidebar-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .app-sidebar-item + .app-sidebar-item {
+    margin-top: 0.35rem;
+  }
+
+  .app-sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.8rem 0.95rem;
+    border-radius: 0.8rem;
+    color: var(--app-text-muted);
+    transition: all 0.18s ease;
+  }
+
+  .app-sidebar-link:hover {
+    background: rgba(255,255,255,0.04);
+    color: var(--app-text);
+  }
+
+  .app-sidebar-link.active {
+    background: linear-gradient(135deg, rgba(13,110,253,0.18), rgba(13,110,253,0.08));
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(13,110,253,0.22);
+  }
+
+  .app-sidebar-link-icon {
+    width: 1.25rem;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1rem;
+  }
+
+  .app-sidebar-link-label {
+    font-weight: 500;
+  }
+
+  .app-main {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-topbar {
+    min-height: var(--app-topbar-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    background: rgba(23, 26, 33, 0.78);
+    border-bottom: 1px solid var(--app-border);
+    backdrop-filter: blur(14px);
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+  }
+
+  .app-topbar-left,
+  .app-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .app-topbar-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .app-topbar-heading {
+    min-width: 0;
+  }
+
+  .app-topbar-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+  }
+
+  .app-topbar-subtitle {
+    color: var(--app-text-muted);
+    font-size: 0.92rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 65vw;
+  }
+
+  .app-topbar-breadcrumbs .breadcrumb {
+    margin: 0;
+    font-size: 0.82rem;
+  }
+
+  .app-topbar-breadcrumbs .breadcrumb-item,
+  .app-topbar-breadcrumbs .breadcrumb-item a {
+    color: var(--app-text-muted);
+  }
+
+  .app-topbar-breadcrumbs .breadcrumb-item.active {
+    color: var(--app-text);
+  }
+
+  .app-content {
+    flex: 1 1 auto;
+    padding: 1.5rem;
+  }
+
+  .app-content.content-padding {
+    padding: 1.5rem;
+  }
+
+  .app-content-header {
+    margin-bottom: 1.25rem;
+  }
+
+  .app-content-title {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+  }
+
+  .app-content-subtitle {
+    margin: 0.45rem 0 0;
+    color: var(--app-text-muted);
+  }
+
+  .app-content-body {
+    min-width: 0;
+    position: relative;
+  }
+
+  .app-footer {
+    margin-top: auto;
+    border-top: 1px solid var(--app-border);
+    background: rgba(23, 26, 33, 0.78);
+    backdrop-filter: blur(14px);
+  }
+
+  .app-footer-inner {
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--app-text-muted);
+    font-size: 0.9rem;
+  }
+
+  .dataTables_wrapper > div.row:first-child {
+    padding-bottom: 0.75rem;
+  }
+
+  div.dataTables_wrapper div.dataTables_filter input[type="search"] {
+    width: 250px !important;
+  }
+
+  div.app-alert-host > div.alert:first-child {
+    margin-top: 0.75rem;
+  }
+
+  .card {
+    background-color: var(--app-panel);
+    border-color: var(--app-border) !important;
+    box-shadow: var(--app-shadow);
+    border-radius: var(--app-radius);
+  }
+
+  .card .card-header,
+  .modal-content {
+    background-color: var(--app-panel);
+    color: var(--app-text);
+    border-color: var(--app-border);
+  }
+
+  .modal-header,
+  .modal-footer {
+    border-color: var(--app-border);
+  }
+
+  .table.table-dark {
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: rgba(255,255,255,0.02);
+    --bs-table-hover-bg: rgba(255,255,255,0.035);
+    --bs-table-border-color: rgba(255,255,255,0.06);
+  }
+
+  .table-secondary,
+  .table > :not(caption) > * > * {
+    border-color: rgba(255,255,255,0.07);
+  }
+
+  .table-secondary {
+    --bs-table-bg: rgba(255,255,255,0.06);
+    --bs-table-color: #fff;
+  }
+
+  .form-control,
+  .form-select {
+    background-color: #11151b;
+    border-color: var(--app-border);
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    background-color: #11151b;
+    border-color: rgba(13,110,253,0.55);
+    box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.15);
+  }
+
+  .form-check-input {
+    background-color: #11151b;
+    border-color: var(--app-border);
+  }
+
+  .btn-outline-light {
+    border-color: #5a6472;
+    color: #dbe2ea;
+  }
+
+  .btn-outline-light:hover {
+    background: #dbe2ea;
+    color: #11151b;
+    border-color: #dbe2ea;
+  }
+
+  .badge.path-badge {
+    padding: 0.5rem 0.7rem;
+    border-radius: 999px;
+  }
+
+  code {
+    color: #9ec5fe;
+  }
+
+  .text-secondary,
+  .form-text {
+    color: var(--app-text-muted) !important;
+  }
+
+  .alert {
+    border-radius: 0.85rem;
+  }
+
+  @media (max-width: 991.98px) {
+    .app-shell {
+      display: block;
+    }
+
+    .app-sidebar {
+      width: 100%;
+      min-width: 0;
+      height: auto;
+      position: relative;
+      border-right: 0;
+      border-bottom: 1px solid var(--app-border);
+    }
+
+    .app-topbar {
+      position: relative;
+      top: auto;
+      padding: 1rem;
+    }
+
+    .app-topbar-subtitle {
+      max-width: 100%;
+      white-space: normal;
+    }
+
+    .app-content,
+    .app-content.content-padding {
+      padding: 1rem;
+    }
+  }
+
+  .app-topbar-right {
+    margin-left: auto;
+  }
+
+  .app-topbar-user {
+    display: inline-flex;
+    align-items: start;
+    gap: 0.75rem;
+    padding: 0.45rem 0.55rem 0.45rem 0.8rem;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0.8rem;
+    background: rgba(255,255,255,0.03);
+    color: var(--app-text);
+  }
+
+  .app-topbar-user-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .app-topbar-user:hover {
+    color: var(--app-text);
+    background: rgba(255,255,255,0.05);
+  }
+
+  .app-topbar-user-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.15;
+  }
+
+  .app-topbar-user-label {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+  }
+
+  .app-topbar-user-subtitle {
+    font-size: 0.78rem;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+
+  .app-topbar-user-avatar {
+    width: 2.15rem;
+    height: 2.15rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(13,110,253,0.22), rgba(111,66,193,0.22));
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    overflow: hidden;
+    flex: 0 0 auto;
+  }
+
+  .app-topbar-user-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .app-topbar-user-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.15rem;
+    padding-left: 0.55rem;
+    border-left: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .app-topbar-user-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    color: var(--app-text-muted);
+    transition: all 0.18s ease;
+  }
+
+  .app-topbar-user-action:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.08);
+  }
+
+  @media (max-width: 767.98px) {
+    .app-topbar-user-subtitle {
+      display: none;
+    }
+
+    .app-topbar-user-meta {
+      display: none;
+    }
+
+    .app-topbar-user {
+      padding-left: 0.45rem;
+    }
+
+    .app-topbar-user-actions {
+      padding-left: 0.35rem;
+      border-left: 0;
+    }
+  }
+
+    /* Widget wrapper */
+    .chat-widget {
+        position: fixed;
+        right: 1.25rem;
+        bottom: 1.25rem;
+        z-index: 1055;
+        font-family: inherit;
+    }
+
+    /* Floating button */
+    .chat-toggle {
+        width: 64px;
+        height: 64px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #0d6efd, #3d8bfd);
+        color: #fff;
+        box-shadow: var(--chat-shadow);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        cursor: pointer;
+        transition:
+            transform 0.35s ease,
+            border-radius 0.35s ease,
+            opacity 0.25s ease,
+            box-shadow 0.35s ease;
+    }
+
+    .chat-toggle:hover {
+        transform: translateY(-2px) scale(1.03);
+        box-shadow: 0 24px 60px rgba(13,110,253,0.25);
+    }
+
+    /* Chat box panel */
+    .chat-panel-wrap {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 380px;
+        height: 560px;
+        max-width: calc(100vw - 1.5rem);
+        max-height: calc(100vh - 1.5rem);
+        pointer-events: none;
+    }
+
+    .chat-panel {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(21, 23, 28, 0.94);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--chat-border);
+        border-radius: 1.6rem;
+        box-shadow: var(--chat-shadow);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        opacity: 0;
+        transform-origin: bottom right;
+        transform: translateY(20px) scale(0.2);
+        transition:
+            transform 0.45s cubic-bezier(.22,1,.36,1),
+            opacity 0.3s ease,
+            border-radius 0.35s ease;
+        pointer-events: none;
+    }
+
+    .chat-widget.open .chat-panel {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
+    }
+
+    .chat-widget.open .chat-toggle {
+        opacity: 0;
+        transform: scale(0.7);
+        pointer-events: none;
+    }
+
+    /* Header */
+    .chat-header {
+        background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+        border-bottom: 1px solid var(--chat-border);
+        padding: 1rem 1rem 0.9rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .chat-header h5 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .chat-header small {
+        color: var(--chat-muted);
+    }
+
+    .chat-header .btn-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 999px;
+        border: 1px solid var(--chat-border);
+        background: rgba(255,255,255,0.03);
+        color: var(--chat-text);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.25s ease;
+    }
+
+    .chat-header .btn-icon:hover {
+        background: rgba(255,255,255,0.08);
+        transform: scale(1.05);
+    }
+
+    /* Views */
+    .chat-body {
+        position: relative;
+        flex: 1;
+        overflow: hidden;
+        background: linear-gradient(180deg, var(--chat-bg), #111318);
+    }
+
+    .chat-view {
+        position: absolute;
+        inset: 0;
+        padding: 1rem;
+        overflow-y: auto;
+        transition:
+            transform 0.35s cubic-bezier(.22,1,.36,1),
+            opacity 0.25s ease;
+    }
+
+    .view-rooms {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    .view-room {
+        transform: translateX(24px);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .chat-panel.in-room .view-rooms {
+        transform: translateX(-24px);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .chat-panel.in-room .view-room {
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* Chatroom cards */
+    .chatroom-card {
+        background: linear-gradient(180deg, var(--chat-panel), var(--chat-panel-2));
+        border: 1px solid var(--chat-border);
+        border-radius: 1rem;
+        padding: 0.95rem 1rem;
+        color: var(--chat-text);
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        margin-bottom: 0.8rem;
+        transition:
+            transform 0.25s ease,
+            border-color 0.25s ease,
+            background 0.25s ease,
+            box-shadow 0.25s ease;
+    }
+
+    .chatroom-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(13,110,253,0.35);
+        box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+        background: linear-gradient(180deg, #232833, #292f3a);
+    }
+
+    .chatroom-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 0.9rem;
+        background: rgba(13,110,253,0.12);
+        color: #7fb0ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    .chatroom-meta {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .chatroom-title {
+        font-weight: 600;
+        margin-bottom: 0.15rem;
+    }
+
+    .chatroom-subtitle {
+        color: var(--chat-muted);
+        font-size: 0.875rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .chatroom-badge {
+        background: rgba(13,110,253,0.12);
+        color: #8ab4ff;
+        border: 1px solid rgba(13,110,253,0.2);
+        border-radius: 999px;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    /* Messages */
+    .messages {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .message-row {
+        display: flex;
+    }
+
+    .message-row.other {
+        justify-content: flex-start;
+    }
+
+    .message-row.self {
+        justify-content: flex-end;
+    }
+
+    .message-bubble {
+        max-width: 78%;
+        padding: 0.8rem 0.95rem;
+        border-radius: 1rem;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+    }
+
+    .message-row.other .message-bubble {
+        background: #252a34;
+        color: var(--chat-text);
+        border-top-left-radius: 0.35rem;
+    }
+
+    .message-row.self .message-bubble {
+        background: linear-gradient(135deg, #0d6efd, #3d8bfd);
+        color: white;
+        border-top-right-radius: 0.35rem;
+    }
+
+    .message-time {
+        font-size: 0.72rem;
+        color: var(--chat-muted);
+        margin-top: 0.25rem;
+    }
+
+    /* Footer input */
+    .chat-footer {
+        border-top: 1px solid var(--chat-border);
+        padding: 0.85rem;
+        background: rgba(255,255,255,0.02);
+    }
+
+    .chat-input-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        background: #1d2128;
+        border: 1px solid var(--chat-border);
+        border-radius: 999px;
+        padding: 0.35rem 0.45rem 0.35rem 0.85rem;
+    }
+
+    .chat-input {
+        flex: 1;
+        background: transparent;
+        border: 0;
+        color: var(--chat-text);
+        outline: none;
+    }
+
+    .chat-input::placeholder {
+        color: var(--chat-muted);
+    }
+
+    .send-btn {
+        width: 40px;
+        height: 40px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #0d6efd, #3d8bfd);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s ease;
+    }
+
+    .send-btn:hover {
+        transform: scale(1.06);
+    }
+
+    .section-label {
+        color: var(--chat-muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.85rem;
+    }
+
+    .room-topbar {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .room-topbar .back-btn {
+        width: 38px;
+        height: 38px;
+        border-radius: 999px;
+        border: 1px solid var(--chat-border);
+        background: rgba(255,255,255,0.03);
+        color: var(--chat-text);
+    }
+
+    .room-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 0.9rem;
+        background: rgba(13,110,253,0.12);
+        color: #8ab4ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+    }
+
+    @media (max-width: 576px) {
+        .chat-widget {
+            right: 0.75rem;
+            bottom: 0.75rem;
+        }
+
+        .chat-panel-wrap {
+            width: min(100vw - 1rem, 100%);
+            height: min(78vh, 640px);
+        }
+    }
+</style>
+
+<style>
+        table.dataTable tbody tr {
+          background-color: transparent;
+        }
+        div.dataTables_wrapper div.dataTables_length select,
+        div.dataTables_wrapper div.dataTables_filter input {
+          background-color: #1b1b1b;
+          color: #e9ecef;
+          border: 1px solid #495057;
+        }
+        div.dataTables_wrapper div.dataTables_info,
+        div.dataTables_wrapper div.dataTables_filter label,
+        div.dataTables_wrapper div.dataTables_length label {
+          color: #adb5bd;
+        }
+        .page-link {
+          background-color: #1b1b1b;
+          border-color: #495057;
+          color: #e9ecef;
+        }
+        .page-link:hover {
+          background-color: #2a2a2a;
+          border-color: #6c757d;
+          color: #fff;
+        }
+        .page-item.active .page-link {
+          background-color: #0d6efd;
+          border-color: #0d6efd;
+          color: #fff;
+        }
+      </style>
+</head>
+<body class="app-body layout-dashboard auth-restricted theme-default page-chat-manager" data-layout="dashboard" data-auth="restricted" data-theme="default" data-bs-theme="dark">
+  <div class="app-shell">
+<aside class="app-sidebar" data-collapsed="false">
+  <div class="app-sidebar-brand">
+    <a href="/webhook/dashboard" class="app-sidebar-brand-link"><span class="app-sidebar-brand-label">Dashboard</span></a>
+  </div>
+  <nav class="app-sidebar-nav" aria-label="Sidebar">
+    <ul class="app-sidebar-list">
+      <li class="app-sidebar-item"><a href="/webhook/file" class="app-sidebar-link"><span class="app-sidebar-link-icon"><i class="bi bi-folder2-open"></i></span><span class="app-sidebar-link-body"><span class="app-sidebar-link-label">File Manager</span></span></a></li>
+      <li class="app-sidebar-item"><a href="/webhook/chat" class="app-sidebar-link active" aria-current="page"><span class="app-sidebar-link-icon"><i class="bi bi-chat-dots"></i></span><span class="app-sidebar-link-body"><span class="app-sidebar-link-label">Chat Manager</span></span></a></li>
+    </ul>
+  </nav>
+</aside>
+    <div class="app-main">
+<header class="app-topbar">
+    <div class="app-topbar-left">
+      <div class="app-topbar-main">
+      <nav class="app-topbar-breadcrumbs" aria-label="Breadcrumb">
+        <ol class="breadcrumb mb-0">
+          <li class="breadcrumb-item"><a href="/webhook/dashboard">Dashboard</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Chat Manager</li>
+        </ol>
+      </nav>
+        <div class="app-topbar-heading">
+          <div class="app-topbar-title">Chat Manager</div>
+          <div class="app-topbar-subtitle">Manage available chatrooms, routing, and visibility.</div>
+        </div>
+      </div>
+    </div>
+    <div class="app-topbar-right">
+      <div class="app-topbar-user">
+        <div class="app-topbar-user-trigger">
+          <div class="app-topbar-user-avatar">L</div>
+          <div class="app-topbar-user-meta">
+            <div class="app-topbar-user-label">louis</div>
+            <div class="app-topbar-user-subtitle">administrator</div>
+          </div>
+          <div class="app-topbar-user-actions">
+            <a href="/webhook/api/auth/logout?redirect=/webhook/login%3Fredirect%3D%252Fwebhook%252Fchat" class="app-topbar-user-action" title="Logout" aria-label="Logout">
+              <i class="bi bi-box-arrow-right"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+</header>
+<main class="app-content content-padding">
+    <div class="container-fluid">
+      <div class="app-content-header">
+        <div class="app-content-header-main">
+          <h1 class="app-content-title">Chat Manager</h1>
+          <p class="app-content-subtitle">Manage available chatrooms, routing, and visibility.</p>
+        </div>
+<div class="app-alert-host"></div>
+      </div>
+      <div class="app-content-body">
+
+
+
+  <div class="card shadow-sm border-secondary">
+    <div class="card-body p-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div></div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createChatRoomModal">
+            <i class="bi bi-plus-circle me-1"></i>Create Chatroom
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <div id="chatRoomTable_wrapper" class="dataTables_wrapper dt-bootstrap5 no-footer"><div class="row"><div class="col-sm-12 col-md-6"><div class="dataTables_length" id="chatRoomTable_length"><label>Show <select name="chatRoomTable_length" aria-controls="chatRoomTable" class="form-select form-select-sm"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="-1">All</option></select> entries</label></div></div><div class="col-sm-12 col-md-6"><div id="chatRoomTable_filter" class="dataTables_filter"><label>Search:<input type="search" class="form-control form-control-sm" placeholder="" aria-controls="chatRoomTable"></label></div></div></div><div class="row dt-row"><div class="col-sm-12"><table id="chatRoomTable" class="table table-dark table-hover align-middle mb-0 w-100 dataTable no-footer dtr-inline" aria-describedby="chatRoomTable_info" style="width: 1522px;">
+          <thead class="table-secondary">
+            <tr><th class="sorting sorting_asc" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 173px;" aria-sort="ascending" aria-label="Room: activate to sort column descending">Room</th><th class="sorting" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 124px;" aria-label="Key: activate to sort column ascending">Key</th><th class="sorting" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 93px;" aria-label="Mode: activate to sort column ascending">Mode</th><th class="sorting" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 85px;" aria-label="Type: activate to sort column ascending">Type</th><th class="sorting" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 132px;" aria-label="Visibility: activate to sort column ascending">Visibility</th><th class="sorting" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 105px;" aria-label="Status: activate to sort column ascending">Status</th><th class="sorting" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 316px;" aria-label="Description: activate to sort column ascending">Description</th><th class="sorting" tabindex="0" aria-controls="chatRoomTable" rowspan="1" colspan="1" style="width: 96px;" aria-label="Route: activate to sort column ascending">Route</th><th class="sorting_disabled" rowspan="1" colspan="1" style="width: 110px;" aria-label="Actions">Actions</th></tr>
+          </thead>
+          <tbody>
+
+
+
+
+
+
+
+
+
+          <tr class="odd">
+          <td class="text-nowrap dtr-control sorting_1" tabindex="0">
+            <i class="bi bi-chat-dots-fill me-2"></i>Assistant
+          </td>
+          <td>assistant</td>
+          <td><span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">AI</span></td>
+          <td>agent</td>
+          <td>public</td>
+          <td>active</td>
+          <td><span class="text-secondary">General private AI assistant</span></td>
+          <td><code>—</code></td>
+          <td class="text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-warning">
+              <i class="bi bi-pencil-square me-1"></i>Edit
+            </button>
+          </td>
+        </tr><tr class="even">
+          <td class="text-nowrap dtr-control sorting_1" tabindex="0">
+            <i class="bi bi-people me-2"></i>Community
+          </td>
+          <td>community</td>
+          <td><span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">Shared</span></td>
+          <td>shared</td>
+          <td>public</td>
+          <td>active</td>
+          <td><span class="text-secondary">Shared community chat room</span></td>
+          <td><code>—</code></td>
+          <td class="text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-warning">
+              <i class="bi bi-pencil-square me-1"></i>Edit
+            </button>
+          </td>
+        </tr><tr class="odd">
+          <td class="text-nowrap dtr-control sorting_1" tabindex="0">
+            <i class="bi bi-bag-check me-2"></i>Sales Agent
+          </td>
+          <td>sales</td>
+          <td><span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">AI</span></td>
+          <td>agent</td>
+          <td>public</td>
+          <td>active</td>
+          <td><span class="text-secondary">Private sales AI chat</span></td>
+          <td><code>—</code></td>
+          <td class="text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-warning">
+              <i class="bi bi-pencil-square me-1"></i>Edit
+            </button>
+          </td>
+        </tr><tr class="even">
+          <td class="text-nowrap dtr-control sorting_1" tabindex="0">
+            <i class="bi bi-life-preserver me-2"></i>Support
+          </td>
+          <td>support</td>
+          <td><span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">Shared</span></td>
+          <td>shared</td>
+          <td>restricted</td>
+          <td>active</td>
+          <td><span class="text-secondary">Shared support room</span></td>
+          <td><code>—</code></td>
+          <td class="text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-warning">
+              <i class="bi bi-pencil-square me-1"></i>Edit
+            </button>
+          </td>
+        </tr></tbody>
+        </table></div></div><div class="row"><div class="col-sm-12 col-md-5"><div class="dataTables_info" id="chatRoomTable_info" role="status" aria-live="polite">Showing 1 to 4 of 4 chatrooms</div></div><div class="col-sm-12 col-md-7"><div class="dataTables_paginate paging_simple_numbers" id="chatRoomTable_paginate"><ul class="pagination"><li class="paginate_button page-item previous disabled" id="chatRoomTable_previous"><a aria-controls="chatRoomTable" aria-disabled="true" role="link" data-dt-idx="previous" tabindex="-1" class="page-link">Previous</a></li><li class="paginate_button page-item active"><a href="#" aria-controls="chatRoomTable" role="link" aria-current="page" data-dt-idx="0" tabindex="0" class="page-link">1</a></li><li class="paginate_button page-item next disabled" id="chatRoomTable_next"><a aria-controls="chatRoomTable" aria-disabled="true" role="link" data-dt-idx="next" tabindex="-1" class="page-link">Next</a></li></ul></div></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="createChatRoomModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content border-primary">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-plus-circle me-2 text-primary"></i>Create Chatroom
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form action="/webhook/api/chat/create/room" method="post">
+          <div class="modal-body">
+            <input type="hidden" name="redirect" value="/webhook/chat">
+            <input type="hidden" name="responseMode" value="redirect">
+
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Name</label>
+                <input type="text" name="name" class="form-control" placeholder="Community" required="">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Key</label>
+                <input type="text" name="key" class="form-control" placeholder="community">
+                <div class="form-text text-secondary">Leave blank to auto-generate from the name.</div>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Description</label>
+                <textarea name="description" class="form-control" rows="3" placeholder="Shared community room"></textarea>
+              </div>
+
+              <div class="col-md-4">
+                <label class="form-label">Type</label>
+                <select name="type" class="form-select">
+                  <option value="shared" selected="">shared</option>
+                  <option value="direct">direct</option>
+                  <option value="agent">agent</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Visibility</label>
+                <select name="visibility" class="form-select">
+                  <option value="public" selected="">public</option>
+                  <option value="private">private</option>
+                  <option value="restricted">restricted</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                  <option value="active" selected="">active</option>
+                  <option value="disabled">disabled</option>
+                  <option value="archived">archived</option>
+                </select>
+              </div>
+
+              <div class="col-md-4">
+                <label class="form-label">Icon</label>
+                <input type="text" name="icon" class="form-control" value="bi-chat-dots-fill">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Color</label>
+                <input type="text" name="color" class="form-control" placeholder="#0d6efd">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Sort Order</label>
+                <input type="number" name="sortOrder" class="form-control" value="100">
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label">Agent Workflow ID</label>
+                <input type="text" name="agentWorkflowId" class="form-control" placeholder="n8n workflow id">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Agent ID</label>
+                <input type="text" name="agentId" class="form-control" placeholder="assistant">
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Endpoint</label>
+                <input type="text" name="endpoint" class="form-control" placeholder="https://...">
+              </div>
+
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="true" id="createChatRoomAgentBacked" name="isAgentBacked">
+                  <label class="form-check-label" for="createChatRoomAgentBacked">
+                    Mark room as agent-backed
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-plus-circle me-1"></i>Create Chatroom
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function initializeChatRoomTable() {
+      if (typeof window.jQuery === 'undefined' || typeof window.jQuery.fn.DataTable === 'undefined') {
+        return;
+      }
+
+      const table = window.jQuery('#chatRoomTable');
+      if (!table.length) {
+        return;
+      }
+
+      if (window.jQuery.fn.DataTable.isDataTable('#chatRoomTable')) {
+        table.DataTable().destroy();
+      }
+
+      table.DataTable({
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        order: [[0, 'asc']],
+        columnDefs: [
+          { orderable: false, searchable: false, targets: 8 }
+        ],
+        responsive: true,
+        language: {
+          search: 'Search:',
+          lengthMenu: 'Show _MENU_ entries',
+          info: 'Showing _START_ to _END_ of _TOTAL_ chatrooms',
+          infoEmpty: 'Showing 0 to 0 of 0 chatrooms',
+          infoFiltered: '(filtered from _MAX_ total chatrooms)',
+          zeroRecords: 'No matching chatrooms found',
+          emptyTable: 'No chatrooms found.'
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      initializeChatRoomTable();
+
+      const modal = document.getElementById('createChatRoomModal');
+      if (modal) {
+        modal.addEventListener('shown.bs.modal', function () {
+          const input = modal.querySelector('input[name="name"]');
+          if (input) input.focus();
+        });
+      }
+    });
+  </script>
+
+      </div>
+    </div>
+</main>
+
+<div class="chat-widget dashboard-chat-widget" id="dashboard-chat-1" data-widget-id="dashboard-chat-1" data-initialized="true">
+  <button type="button" class="chat-toggle" aria-label="Open chat">
+    <i class="bi bi-chat-dots-fill"></i>
+  </button>
+
+  <div class="chat-panel-wrap chat-shell">
+    <div class="chat-panel" id="dashboard-chat-1-panel">
+      <div class="chat-header">
+        <div>
+          <h5 class="mb-0">Messages</h5>
+          <small id="dashboard-chat-1-header-subtitle">Chat with an AI agent or shared room</small>
+        </div>
+        <button type="button" class="btn-icon chat-close" aria-label="Close chat">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="chat-body">
+        <div class="chat-view view-rooms">
+          <div class="section-label">Chatrooms</div>
+          <div class="chat-room-list" id="dashboard-chat-1-rooms"><a href="#" class="chatroom-card room-select " data-room-key="community"><div class="chatroom-icon"><i class="bi bi-people"></i></div><div class="chatroom-meta"><div class="chatroom-title">Community</div><div class="chatroom-subtitle">Shared community chat room</div></div></a><a href="#" class="chatroom-card room-select " data-room-key="sales"><div class="chatroom-icon"><i class="bi bi-bag-check"></i></div><div class="chatroom-meta"><div class="chatroom-title">Sales Agent</div><div class="chatroom-subtitle">Private sales AI chat</div></div><span class="chatroom-badge">AI</span></a><a href="#" class="chatroom-card room-select " data-room-key="assistant"><div class="chatroom-icon"><i class="bi bi-chat-dots-fill"></i></div><div class="chatroom-meta"><div class="chatroom-title">Assistant</div><div class="chatroom-subtitle">General private AI assistant</div></div><span class="chatroom-badge">AI</span></a></div>
+        </div>
+
+        <div class="chat-view view-room">
+          <div class="room-topbar">
+            <button type="button" class="back-btn" id="dashboard-chat-1-back" aria-label="Back">
+              <i class="bi bi-arrow-left"></i>
+            </button>
+
+            <div class="room-avatar" id="dashboard-chat-1-room-avatar">
+              <i class="bi bi-chat-square-text"></i>
+            </div>
+
+            <div>
+              <div class="fw-semibold" id="dashboard-chat-1-active-room-title">Messages</div>
+              <small class="text-secondary active-room-subtitle">Chat with an AI agent or shared room</small>
+            </div>
+          </div>
+
+          <div class="chat-main-body">
+            <div class="messages chat-message-list" id="dashboard-chat-1-messages"><div class="chat-empty">No messages yet.</div></div>
+            <aside class="chat-members d-none">
+              <div class="section-label mb-3">Members</div>
+              <div class="chat-member-list" id="dashboard-chat-1-members"><div class="chat-empty">—</div></div>
+            </aside>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-footer">
+        <form class="chat-form" id="dashboard-chat-1-form">
+          <div class="chat-input-wrap">
+            <input type="text" class="chat-input" id="dashboard-chat-1-input" placeholder="Type your message...">
+            <button type="submit" class="send-btn chat-send" aria-label="Send">
+              <i class="bi bi-send-fill"></i>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<footer class="app-footer">
+  <div class="container">
+    <div class="app-footer-inner">
+        <div class="app-footer-text">Copyright © 2024-2026 ALB Consulting Group Inc. All rights reserved.</div>
+    </div>
+  </div>
+</footer>
+    </div>
+  </div>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+  <script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+  <script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap5.min.js"></script>
+
+      <script>
+        document.addEventListener('DOMContentLoaded', function () {
+          function escapeHtml(value) {
+            return String(value ?? '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+          }
+
+          function getAlertConfig(level) {
+            if (level === 'success') {
+              return {
+                className: 'success',
+                icon: 'bi-check-circle-fill'
+              };
+            }
+
+            if (level === 'danger') {
+              return {
+                className: 'danger',
+                icon: 'bi-exclamation-triangle-fill'
+              };
+            }
+
+            return {
+              className: 'warning',
+              icon: 'bi-exclamation-circle-fill'
+            };
+          }
+
+          function appendAlert(level, message) {
+            const host = document.querySelector('.app-alert-host');
+            if (!host || !message) return;
+
+            const config = getAlertConfig(level);
+            const wrapper = document.createElement('div');
+            wrapper.className = 'alert alert-' + config.className + ' d-flex align-items-center justify-content-start gap-2';
+            wrapper.setAttribute('role', 'alert');
+            wrapper.innerHTML = '<i class="bi ' + config.icon + '"></i><div>' + escapeHtml(message) + '</div>';
+            host.appendChild(wrapper);
+          }
+
+          const params = new URLSearchParams(window.location.search);
+          const successParam = params.get('success');
+          const errorParam = params.get('error');
+          const messageParam = params.get('message');
+
+          if (successParam) {
+            appendAlert('success', successParam);
+          }
+
+          if (errorParam) {
+            appendAlert('danger', errorParam);
+          }
+
+          if (messageParam) {
+            appendAlert('warning', messageParam);
+          }
+
+          console.log('location.href:', window.location.href);
+          console.log('location.origin:', window.location.origin);
+          console.log('document.baseURI:', document.baseURI);
+
+          const form = document.querySelector('form');
+          if (form) {
+            form.addEventListener('submit', function () {
+              console.log('Submitting form from:');
+              console.log('location.href:', window.location.href);
+              console.log('location.origin:', window.location.origin);
+              console.log('document.baseURI:', document.baseURI);
+              console.log('form.action:', form.action);
+            });
+          }
+        });
+      </script>
+
+<script>
+
+(function() {
+  const widget = document.getElementById("dashboard-chat-1");
+  if (!widget || widget.dataset.initialized === 'true') return;
+  widget.dataset.initialized = 'true';
+
+  const config = {"widgetId":"dashboard-chat-1","title":"Messages","subtitle":"Chat with an AI agent or shared room","joinUrl":"/webhook/api/chat/room/join","historyUrl":"/webhook/api/chat/room/history","sendUrl":"/webhook/api/chat/message/send","sessionHash":"","userId":1,"auth":{"success":true,"authenticated":true,"authType":"session","actor":{"type":"user","id":"louis","userId":1,"email":"louis@laswitchtech.com","role":"administrator","isAdmin":true,"status":"active"},"session":{"id":9,"userId":1,"status":"active","expiresAt":"2026-04-20 14:58:25","lastUsed":null,"ipAddress":"","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"},"apiKey":null,"message":"Session validated successfully."},"authScope":"restricted","adminMode":false,"autoOpen":false,"allowRoomSelection":true,"showHeader":true,"showMembers":false,"includeSystem":true,"includeDeleted":false,"createConversation":true,"recentMessageLimit":50,"timeoutMs":120000,"position":{"bottom":"1.25rem","right":"1.25rem"},"dimensions":{"width":"380px","height":"560px"},"button":{"icon":"bi-chat-dots-fill","label":"Open chat"},"labels":{"rooms":"Chatrooms","loading":"Loading...","placeholder":"Type your message...","members":"Members","emptyRooms":"No chatrooms available.","emptyMessages":"No messages yet.","back":"Back","send":"Send","online":"Online","ai":"AI"},"error":"Something went wrong.","rooms":[{"id":1,"key":"community","title":"Community","subtitle":"Shared community chat room","description":"Shared community chat room","icon":"bi-people","badge":"","isAgentBacked":false,"workflowId":"","agentId":"","endpoint":"","visibility":"public","status":"active","config":{}},{"id":3,"key":"sales","title":"Sales Agent","subtitle":"Private sales AI chat","description":"Private sales AI chat","icon":"bi-bag-check","badge":"","isAgentBacked":true,"workflowId":"","agentId":"sales-agent","endpoint":"","visibility":"public","status":"active","config":{}},{"id":4,"key":"assistant","title":"Assistant","subtitle":"General private AI assistant","description":"General private AI assistant","icon":"bi-chat-dots-fill","badge":"","isAgentBacked":true,"workflowId":"","agentId":"assistant","endpoint":"","visibility":"public","status":"active","config":{}}],"assets":{"bootstrap":true,"bootstrapIcons":true}};
+  const chatPanel = widget.querySelector('#dashboard-chat-1-panel');
+  const chatToggle = widget.querySelector('.chat-toggle');
+  const chatClose = widget.querySelector('.chat-close');
+  const backToRooms = widget.querySelector('#dashboard-chat-1-back');
+  const roomList = widget.querySelector('#dashboard-chat-1-rooms');
+  const messages = widget.querySelector('#dashboard-chat-1-messages');
+  const memberList = widget.querySelector('#dashboard-chat-1-members');
+  const chatForm = widget.querySelector('#dashboard-chat-1-form');
+  const chatInput = widget.querySelector('#dashboard-chat-1-input');
+  const activeRoomTitle = widget.querySelector('#dashboard-chat-1-active-room-title');
+  const roomAvatar = widget.querySelector('#dashboard-chat-1-room-avatar');
+  const chatHeaderSubtitle = widget.querySelector('#dashboard-chat-1-header-subtitle');
+  const activeRoomSubtitle = widget.querySelector('.active-room-subtitle');
+
+  const state = {
+    rooms: Array.isArray(config.rooms) ? [...config.rooms] : [],
+    activeRoom: null,
+    conversation: null,
+    membership: null,
+    agentSession: null,
+    members: [],
+    messages: [],
+    loading: false
+  };
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function openChat() {
+    widget.classList.add('open');
+  }
+
+  function closeChat() {
+    widget.classList.remove('open');
+    setTimeout(() => {
+      leaveRoom(false);
+    }, 250);
+  }
+
+  function enterRoom(room) {
+    if (!room || !chatPanel) return;
+    state.activeRoom = room;
+    activeRoomTitle.textContent = room.title || room.name || room.key || config.title || 'Room';
+    activeRoomSubtitle.textContent = room.subtitle || room.description || config.subtitle || '';
+    chatHeaderSubtitle.textContent = room.title || room.name || room.key || config.title || 'Room';
+    roomAvatar.innerHTML = '<i class="bi ' + escapeHtml(room.icon || 'bi-chat-square-text') + '"></i>';
+    chatPanel.classList.add('in-room');
+    renderRooms();
+  }
+
+  function leaveRoom(resetConversation = true) {
+    if (!chatPanel) return;
+    chatPanel.classList.remove('in-room');
+    chatHeaderSubtitle.textContent = config.subtitle || 'Select a room';
+    if (resetConversation) {
+      state.conversation = null;
+      state.membership = null;
+      state.agentSession = null;
+      state.members = [];
+      state.messages = [];
+      renderMessages();
+      renderMembers();
+    }
+  }
+
+  function renderRooms() {
+    if (!roomList) return;
+    if (!state.rooms.length) {
+      roomList.innerHTML = '<div class="chat-empty">' + escapeHtml(config.labels?.emptyRooms || 'No chatrooms available.') + '</div>';
+      return;
+    }
+
+    roomList.innerHTML = state.rooms.map((room) => {
+      const active = state.activeRoom && state.activeRoom.key === room.key ? 'active' : '';
+      const badge = room.badge || (room.isAgentBacked ? (config.labels?.ai || 'AI') : '');
+      return [
+        '<a href="#" class="chatroom-card room-select ' + active + '" data-room-key="' + escapeHtml(room.key) + '">',
+          '<div class="chatroom-icon">',
+            '<i class="bi ' + escapeHtml(room.icon || 'bi-chat-dots-fill') + '"></i>',
+          '</div>',
+          '<div class="chatroom-meta">',
+            '<div class="chatroom-title">' + escapeHtml(room.title || room.name || room.key) + '</div>',
+            '<div class="chatroom-subtitle">' + escapeHtml(room.subtitle || room.description || '') + '</div>',
+          '</div>',
+          (badge ? '<span class="chatroom-badge">' + escapeHtml(badge) + '</span>' : ''),
+        '</a>'
+      ].join('');
+    }).join('');
+
+    roomList.querySelectorAll('[data-room-key]').forEach((button) => {
+      button.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const room = state.rooms.find((entry) => entry.key === button.dataset.roomKey);
+        if (!room) return;
+        enterRoom(room);
+        await joinRoom(room);
+      });
+    });
+  }
+
+  function renderMessages() {
+    if (!messages) return;
+    if (!state.messages.length) {
+      messages.innerHTML = '<div class="chat-empty">' + escapeHtml(config.labels?.emptyMessages || 'No messages yet.') + '</div>';
+      return;
+    }
+
+    messages.innerHTML = state.messages.map((message) => {
+      const senderType = message.senderType || (message.isFromUser ? 'user' : (message.isFromAgent ? 'assistant' : 'system'));
+      const rowClass = senderType === 'user' ? 'self' : 'other';
+      const senderLabel = message.senderLabel || (senderType === 'user' ? 'You' : (state.activeRoom?.title || 'Assistant'));
+      const content = message.content || '';
+      const created = formatTime(message.created);
+      const alignClass = rowClass === 'self' ? ' text-end' : '';
+
+      return [
+        '<div class="message-row ' + rowClass + '">',
+          '<div>',
+            '<div class="message-bubble">' + escapeHtml(content) + '</div>',
+            '<div class="message-time' + alignClass + '">' + escapeHtml(senderLabel) + (created ? ' · ' + escapeHtml(created) : '') + '</div>',
+          '</div>',
+        '</div>'
+      ].join('');
+    }).join('');
+
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function renderMembers() {
+    if (!memberList) return;
+    if (!state.members.length) {
+      memberList.innerHTML = '<div class="chat-empty">—</div>';
+      return;
+    }
+
+    memberList.innerHTML = state.members.map((member) => {
+      const label = member.userId ? ('User ' + member.userId) : (member.sessionHash || 'Anonymous');
+      return '<div class="small text-secondary mb-2">' + escapeHtml(label) + '</div>';
+    }).join('');
+  }
+
+  function normalizeRoomPayload(payload) {
+    if (!payload || !payload.room) return null;
+    return {
+      ...payload.room,
+      title: payload.room.title || payload.room.name || payload.room.key,
+      subtitle: payload.room.subtitle || payload.room.description || ''
+    };
+  }
+
+  async function joinRoom(room) {
+    state.loading = true;
+    messages.innerHTML = '<div class="chat-empty">' + escapeHtml(config.labels?.loading || 'Loading...') + '</div>';
+
+    const joinUrl = config.joinUrl || config.historyUrl || '';
+    if (!joinUrl) {
+      state.messages = [];
+      state.members = [];
+      state.conversation = null;
+      state.membership = null;
+      state.agentSession = null;
+      renderMessages();
+      renderMembers();
+      state.loading = false;
+      return;
+    }
+
+    const payload = {
+      roomId: room.id || null,
+      roomKey: room.key || '',
+      conversationId: state.conversation?.id || null,
+      preferredScope: room.isAgentBacked ? 'session' : 'shared',
+      createConversation: config.createConversation === true,
+      joinMembership: true,
+      includeConversation: true,
+      includeMembership: true,
+      includeAgentSession: true,
+      includeRoom: true,
+      includeDeleted: config.includeDeleted === true,
+      includeRestricted: false,
+      includeInactiveRoom: false,
+      hours: 6,
+      limit: config.recentMessageLimit || 50,
+      responseMode: 'json'
+    };
+
+    try {
+      const response = await fetch(joinUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!data || data.success !== true) {
+        throw new Error(data?.message || 'Unable to join room.');
+      }
+
+      const normalizedRoom = normalizeRoomPayload(data);
+      state.activeRoom = normalizedRoom || room;
+      state.conversation = data.conversation || null;
+      state.membership = data.membership || null;
+      state.agentSession = data.agentSession || null;
+      state.members = Array.isArray(data.members) ? data.members : [];
+      state.messages = Array.isArray(data.messages) ? data.messages : [];
+
+      if (state.activeRoom) {
+        activeRoomTitle.textContent = state.activeRoom.title || state.activeRoom.name || state.activeRoom.key || config.title;
+        activeRoomSubtitle.textContent = state.activeRoom.subtitle || state.activeRoom.description || config.subtitle || '';
+        chatHeaderSubtitle.textContent = state.activeRoom.title || state.activeRoom.name || state.activeRoom.key || config.title;
+        roomAvatar.innerHTML = '<i class="bi ' + escapeHtml(state.activeRoom.icon || 'bi-chat-square-text') + '"></i>';
+      }
+    } catch (error) {
+      state.messages = [{
+        id: 'error-' + Date.now(),
+        senderType: 'system',
+        senderLabel: 'System',
+        content: error.message || 'Unable to join room.'
+      }];
+      state.members = [];
+      state.conversation = null;
+      state.membership = null;
+      state.agentSession = null;
+    } finally {
+      state.loading = false;
+      renderRooms();
+      renderMessages();
+      renderMembers();
+    }
+  }
+
+  async function sendMessage(event) {
+    event.preventDefault();
+    if (!config.sendUrl || !state.activeRoom || !chatInput) return;
+
+    const text = chatInput.value.trim();
+    if (!text) return;
+
+    const optimisticMessage = {
+      id: 'local-' + Date.now(),
+      senderType: 'user',
+      senderLabel: 'You',
+      content: text,
+      created: new Date().toISOString(),
+      isFromUser: true
+    };
+
+    state.messages.push(optimisticMessage);
+    renderMessages();
+    chatInput.value = '';
+
+    const payload = {
+      roomId: state.activeRoom.id || null,
+      roomKey: state.activeRoom.key || '',
+      conversationId: state.conversation?.id || null,
+      userId: config.userId || null,
+      sessionHash: config.sessionHash || '',
+      preferredScope: state.activeRoom.isAgentBacked ? 'session' : 'shared',
+      createConversation: config.createConversation === true,
+      includeDeleted: config.includeDeleted === true,
+      includeSystem: config.includeSystem !== false,
+      historyLimit: config.recentMessageLimit || 25,
+      senderLabel: '',
+      content: text,
+      provider: state.activeRoom.config?.provider || '',
+      agentWorkflowId: state.activeRoom.workflowId || '',
+      agentId: state.activeRoom.agentId || '',
+      endpoint: state.activeRoom.endpoint || '',
+      replySenderType: 'assistant',
+      replySenderLabel: state.activeRoom.title || 'Assistant'
+    };
+
+    try {
+      const response = await fetch(config.sendUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!data || data.success !== true) throw new Error(data?.message || 'Unable to send message.');
+
+      state.conversation = data.conversation || state.conversation;
+      state.agentSession = data.agentSession || state.agentSession;
+
+      if (Array.isArray(data.messages) && data.messages.length) {
+        state.messages = data.messages;
+      } else {
+        state.messages = state.messages.filter((message) => message.id !== optimisticMessage.id);
+        if (data.userMessage) state.messages.push(data.userMessage);
+        if (data.replyMessage) state.messages.push(data.replyMessage);
+      }
+    } catch (error) {
+      state.messages = state.messages.filter((message) => message.id !== optimisticMessage.id);
+      state.messages.push({
+        id: 'error-' + Date.now(),
+        senderType: 'system',
+        senderLabel: 'System',
+        content: error.message || 'Unable to send message.'
+      });
+    } finally {
+      renderMessages();
+    }
+  }
+
+  chatToggle?.addEventListener('click', openChat);
+  chatClose?.addEventListener('click', closeChat);
+  backToRooms?.addEventListener('click', () => leaveRoom(false));
+  chatForm?.addEventListener('submit', sendMessage);
+  chatInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage(event);
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeChat();
+  });
+
+  renderRooms();
+  renderMessages();
+  renderMembers();
+
+  if (config.autoOpen === true) {
+    openChat();
+    if (state.rooms.length) {
+      enterRoom(state.rooms[0]);
+      joinRoom(state.rooms[0]);
+    }
+  }
+})();
+
+</script>
+
+</body></html>

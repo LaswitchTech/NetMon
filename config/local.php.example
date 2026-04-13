@@ -1,0 +1,62 @@
+<?php
+
+/**
+ * Local configuration overrides.
+ *
+ * Copy this file to local.php and customise for your deployment.
+ * local.php is NOT committed to version control.
+ *
+ * Keys defined here are merged (array_replace_recursive) over the
+ * corresponding base config file.  Only specify values you want to
+ * override — unmentioned keys are preserved from the base config.
+ *
+ * Supported top-level keys: 'app', 'database', 'auth'
+ * (one key per config file, matching the filename without .php).
+ *
+ * Config loading order:
+ *   1. .env                   (environment variables, application identity)
+ *   2. config/{file}.php      (base defaults, version-controlled)
+ *   3. config/local.php       (this file — local/deployment overrides)
+ */
+return [
+
+    // -------------------------------------------------------------------------
+    // Database connection (overrides config/database.php)
+    // -------------------------------------------------------------------------
+    'database' => [
+
+        // Uncomment and set driver to 'mysql' to use MySQL / MariaDB.
+        // 'driver' => 'mysql',
+
+        // SQLite path (default — usually no change needed here)
+        // 'sqlite' => [
+        //     'path' => __DIR__ . '/../data/app.db',
+        // ],
+
+        // MySQL connection details
+        // 'mysql' => [
+        //     'host'    => '127.0.0.1',
+        //     'port'    => 3306,
+        //     'name'    => 'netmon',
+        //     'user'    => 'netmon_user',
+        //     'pass'    => 'secret',
+        //     'charset' => 'utf8mb4',
+        // ],
+    ],
+
+    // -------------------------------------------------------------------------
+    // Auth settings (overrides config/auth.php)
+    // -------------------------------------------------------------------------
+    // 'auth' => [
+    //     'session' => [
+    //         'secure' => true,    // set true when serving over HTTPS
+    //     ],
+    // ],
+
+    // -------------------------------------------------------------------------
+    // Application overrides (overrides config/app.php)
+    // -------------------------------------------------------------------------
+    // 'app' => [
+    //     'debug' => false,
+    // ],
+];
