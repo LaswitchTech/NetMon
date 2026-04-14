@@ -23,7 +23,7 @@ Every downstream middleware and controller reads from it — without caring how 
 ```php
 [
     'user'        => [           // safe user fields, never contains password_hash
-        'id', 'username', 'email', 'is_active', 'created_at', 'updated_at'
+        'id', 'display_name', 'username', 'email', 'is_active', 'created_at', 'updated_at'
     ],
     'auth_method' => 'session' | 'token',
     'token'       => null | [ /* token record, no hash */ ],
@@ -108,7 +108,16 @@ contains any permission logic — they build the principal and defer to `Gate`.
 ### `SessionAuth`
 
 Requires a valid session. Writes `principal` to container.  
-401 if not authenticated.
+**401 JSON** if not authenticated. Use for AJAX / JSON API routes.
+
+### `WebAuth`
+
+Identical principal-building logic to `SessionAuth`, but designed for **browser (HTML) routes**.  
+**302 redirect to `/auth/login`** if not authenticated. Use for routes that render pages.
+
+```php
+$router->get('/', 'NetMon\Controllers\HomeController@index', ['WebAuth']);
+```
 
 ### `TokenAuth`
 
@@ -133,13 +142,25 @@ second constructor parameter to the middleware instance.
 
 ## HTTP Endpoints
 
+### `GET /auth/login` — public
+
+Renders the browser login page (`app/Views/auth/login.php`).
+
+- If the user is already authenticated (valid session), redirects to `/` with 302.
+- Otherwise returns 200 with the login form HTML.
+
+The page submits credentials via AJAX (`fetch`) to `POST /auth/login` and redirects to `/` on
+success. No server-side form processing — the same JSON API used by other clients is reused.
+
+---
+
 ### `POST /auth/login` — public
 
 **Body:** `{ "identity": "username or email", "password": "plaintext" }`
 
 **200:**
 ```json
-{ "user": { "id": 1, "username": "alice", "email": "...", "is_active": true, "created_at": "...", "updated_at": "..." } }
+{ "user": { "id": 1, "display_name": "Alice Smith", "username": "alice", "email": "...", "is_active": true, "created_at": "...", "updated_at": "..." } }
 ```
 **400:** missing fields  
 **401:** invalid credentials (message intentionally vague)
@@ -249,6 +270,14 @@ return [
 
 ---
 
+## Views
+
+| File | Route | Description |
+|---|---|---|
+| `app/Views/auth/login.php` | `GET /auth/login` | Minimal Bootstrap 5 login form. Submits via AJAX to `POST /auth/login`. Redirects to `/` on success. |
+
+---
+
 ## Deferred Improvements
 
 | Item | Notes |
@@ -259,3 +288,4 @@ return [
 | `session.secure` | Must be `true` when serving over HTTPS. Currently `false` in `config/auth.php` for local development. |
 | Rate limiting on `/auth/login` | No brute-force protection. |
 | Token rotation | Tokens are static after creation. Generating a replacement and revoking the old one is a manual process. |
+| Polished login UI | The current `login.php` is intentionally minimal. The dark-themed reference at `docs/reference/signin-signup/` can be adapted into a proper design pass later. |

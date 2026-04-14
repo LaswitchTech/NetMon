@@ -8,6 +8,26 @@ use App\Core\Controller;
 class AuthController extends Controller
 {
     // -------------------------------------------------------------------------
+    // GET /auth/login — render the login page
+    // -------------------------------------------------------------------------
+
+    public function loginForm(array $params = []): void
+    {
+        /** @var AuthService $auth */
+        $auth = $this->container->get('auth');
+
+        // Already authenticated — send to home
+        if ($auth->check()) {
+            header('Location: /', true, 302);
+            exit;
+        }
+
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        require __DIR__ . '/../Views/auth/login.php';
+    }
+
+    // -------------------------------------------------------------------------
     // POST /auth/login
     // Body: { "identity": "username or email", "password": "..." }
     // -------------------------------------------------------------------------

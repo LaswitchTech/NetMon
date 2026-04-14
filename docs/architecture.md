@@ -74,9 +74,10 @@ These modules are already implemented and live directly under `app/`:
 | Directory | Namespace | What it provides |
 |---|---|---|
 | `app/Auth/` | `App\Auth\` | Session auth, API token generation/verification, local password provider |
-| `app/Middleware/` | `App\Middleware\` | `SessionAuth`, `TokenAuth`, `RequirePermission` |
+| `app/Middleware/` | `App\Middleware\` | `SessionAuth`, `TokenAuth`, `WebAuth`, `RequirePermission` |
 | `app/Models/` | `App\Models\` | `UserRepository`, `TokenRepository` |
 | `app/Controllers/` | `App\Controllers\` | `AuthController`, `TokenController` (shared HTTP layer for Auth module) |
+| `app/Views/` | *(no namespace)* | PHP view files: `layouts/app.php` (shell), `auth/login.php`, `dashboard/index.php` |
 
 #### Add-on modules (future, not yet built)
 
@@ -123,7 +124,7 @@ Currently implemented:
 
 | File | What it does |
 |---|---|
-| `app/NetMon/Controllers/HomeController.php` | Health check: `GET /` |
+| `app/NetMon/Controllers/HomeController.php` | `GET /` — renders the authenticated dashboard shell |
 
 ---
 
@@ -317,6 +318,7 @@ Name migration files as `{NNNN}_create_{module}_*.php` and place them in `databa
 ## See Also
 
 - [auth.md](auth.md) — Authentication and authorization
+- [dashboard.md](dashboard.md) — Dashboard shell, view rendering pattern, adding new pages
 - [config.md](config.md) — Configuration loading order, .env, local.php
 - [database.md](database.md) — Database abstraction layer
 - [migrations.md](migrations.md) — Migration system and CLI

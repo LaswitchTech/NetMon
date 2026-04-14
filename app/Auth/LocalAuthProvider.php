@@ -63,12 +63,13 @@ class LocalAuthProvider implements AuthProviderInterface
     private function safeUser(array $user): array
     {
         return [
-            'id'         => (int) $user['id'],
-            'username'   => $user['username'],
-            'email'      => $user['email'],
-            'is_active'  => (bool) $user['is_active'],
-            'created_at' => $user['created_at'],
-            'updated_at' => $user['updated_at'],
+            'id'           => (int) $user['id'],
+            'display_name' => $user['display_name'] ?? '',
+            'username'     => $user['username'],
+            'email'        => $user['email'],
+            'is_active'    => (bool) $user['is_active'],
+            'created_at'   => $user['created_at'],
+            'updated_at'   => $user['updated_at'],
         ];
     }
 }

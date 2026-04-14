@@ -3,22 +3,15 @@
 namespace App\NetMon\Controllers;
 
 use App\Core\Controller;
+use App\Models\DeviceRepository;
 
-class HomeController extends Controller
+class DeviceController extends Controller
 {
     /**
-     * GET /
+     * GET /devices
      *
-     * Renders the main authenticated dashboard shell.
+     * Renders the Devices list page inside the authenticated app shell.
      * Authentication is enforced by the WebAuth middleware applied in routes/web.php.
-     *
-     * Rendering pattern:
-     *   1. Extract variables for both the content view and the layout.
-     *   2. Capture the content fragment into $content via output buffering.
-     *   3. Require the layout — it echoes $content into the correct slot.
-     *
-     * Future pages follow the same pattern:
-     *   ob_start() → require content view → ob_get_clean() → require layout
      */
     public function index(array $params = []): void
     {
@@ -28,22 +21,22 @@ class HomeController extends Controller
         $user        = $principal['user'];
         $permissions = $principal['permissions'];
         $appName     = $config['name'];
-        $pageTitle   = 'Dashboard';
+        $pageTitle   = 'Devices';
 
-        // Computed here so it is available inside ob_start() for the content view
-        // AND when the layout is required. Both use the same variable.
         $displayName = ($user['display_name'] ?? '') !== ''
             ? $user['display_name']
             : $user['username'];
 
+        // Fetch device list
+        $deviceRepo = new DeviceRepository($this->container->get('db'));
+        $devices    = $deviceRepo->findAll();
+
         $viewsPath = __DIR__ . '/../../Views';
 
-        // Capture content fragment
         ob_start();
-        require $viewsPath . '/dashboard/index.php';
+        require $viewsPath . '/devices/index.php';
         $content = ob_get_clean();
 
-        // Render full shell
         http_response_code(200);
         header('Content-Type: text/html; charset=utf-8');
         require $viewsPath . '/layouts/app.php';
