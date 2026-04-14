@@ -59,4 +59,30 @@ return [
     // 'app' => [
     //     'debug' => false,
     // ],
+
+    // -------------------------------------------------------------------------
+    // Notification channels (overrides config/notifications.php)
+    // -------------------------------------------------------------------------
+    // 'notifications' => [
+    //
+    //     // Minimum seconds between notifications for the same open alert.
+    //     // 'throttle_seconds' => 900,
+    //
+    //     'channels' => [
+    //
+    //         // Log channel — append-only log file, no external dependencies.
+    //         // 'log' => [
+    //         //     'enabled' => true,
+    //         //     'path'    => __DIR__ . '/../storage/logs/notifications.log',
+    //         // ],
+    //
+    //         // Webhook channel — HTTP POST JSON to any webhook URL.
+    //         // Compatible with Slack, Mattermost, and custom endpoints.
+    //         // 'webhook' => [
+    //         //     'enabled' => true,
+    //         //     'url'     => 'https://hooks.slack.com/services/...',
+    //         //     'timeout' => 5,
+    //         // ],
+    //     ],
+    // ],
 ];

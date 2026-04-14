@@ -17,14 +17,15 @@ users ──< user_groups >── groups ──< group_permissions >── permi
   └──< api_tokens
 
 devices ──< device_interfaces ──< device_addresses
+devices ──< device_checks
 ```
 
 - A user belongs to zero or more groups (via `user_groups`).
 - A group holds zero or more permissions (via `group_permissions`).
 - A user's effective permissions are the union of all permissions from all their groups.
 - A token inherits the user's permissions by default. Token-specific permission scoping is deferred (see below).
-- The `devices` table anchors the monitoring schema. `device_interfaces` and `device_addresses` are now implemented. The remaining monitoring schema (services, alerts, discovery) is documented in [domain-model.md](domain-model.md).
-- During the current transition, `devices.host` and `device_addresses.address` hold the same value. Application code still reads `devices.host` directly; a future repository refactor will switch to querying `device_addresses`.
+- The `devices` table anchors the monitoring schema. `device_interfaces`, `device_addresses`, and `device_checks` are implemented. The remaining monitoring schema (monitored_services, service_checks, alerts, discovery) is documented in [domain-model.md](domain-model.md).
+- `devices.host` and `device_addresses.address` hold the same value during the transitional period. Read and write paths use `device_addresses`; `devices.host` is kept in sync as a fallback. See [devices.md](devices.md) for the retirement plan.
 
 ---
 
@@ -205,7 +206,29 @@ One IP address per row. A single interface may have multiple addresses (dual-sta
 
 The `device_addresses_address` index supports discovery auto-matching: given a scanned IP, look up the owning device in one query.
 
-**Transitional note:** all addresses currently mirror `devices.host`. The `devices.host` column is deprecated but not yet dropped — it will be removed once all code reads from `device_addresses`.
+**Transitional note:** all addresses currently mirror `devices.host`. The `devices.host` column will be dropped once the monitoring runner and UI no longer need the fallback.
+
+---
+
+### `device_checks`
+
+Append-only log of device-level reachability check results. One row per device per monitoring pass. Source of truth for uptime graphs and trend analysis.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | Auto-assigned |
+| device_id | INTEGER FK | → `devices.id` CASCADE DELETE |
+| checked_at | VARCHAR(32) | ISO datetime when the check ran |
+| status | VARCHAR(16) | `online`, `offline`, `timeout`, `error` |
+| latency_ms | INTEGER | NULL if unreachable or errored. Round-trip time in ms. |
+| message | VARCHAR(255) | NULL on success; error detail on failure |
+| created_at | VARCHAR(32) | Row insertion time |
+
+**Indexes:** `device_checks_device_id`, `device_checks_checked_at`, `device_checks_device_id_checked_at`
+
+**Retention note:** this table grows with every monitoring pass. A purge or cap-per-device retention policy should be added before running continuously in production.
+
+**Migration 0014.**
 
 ---
 

@@ -2,9 +2,15 @@
 
 > **Status:** Living planning document.
 > - **Phase 1 complete:** `merged_into_device_id` and `deleted_at` added to `devices` (migration 0010).
-> - All other phases are planned but not yet implemented.
+> - **Phase 2 complete:** `device_interfaces` and `device_addresses` implemented (migrations 0011–0013).
+> - **Phase 3 complete:** `DeviceRepository` read path queries `device_addresses` with `devices.host` fallback.
+> - **Phase 4 complete:** Device CRUD (create/edit/soft-delete) writes to `device_interfaces` and `device_addresses`; keeps `devices.host` in sync.
+> - **Phase 5 complete:** `device_checks` table (migration 0014) and CLI monitoring runner (`scripts/monitor.php`) — device-level ICMP reachability checks with historical storage. Note: the implementation uses a `device_checks` table rather than the `service_checks` table planned below. `device_checks` is a device-level-only table that will coexist with `service_checks` once service-level monitoring is added.
+> - **Phase 6 complete:** `alerts` table (migration 0015) and stateful alert engine integrated into `scripts/monitor.php`. Device-level `device_offline` alerts: open on first failure, increment on re-confirmation, resolve on recovery. Full deduplication enforced. See [alerts.md](alerts.md).
+> - **Phase 7 complete:** `notification_history` table (migration 0016) and notifications engine integrated into `scripts/monitor.php`. Log and webhook channels, 15-minute throttle, `open`/`reminder` notification types, full dispatch history. See [notifications.md](notifications.md).
+> - All subsequent phases are planned but not yet implemented.
 >
-> Related: [schema.md](schema.md) · [devices.md](devices.md) · [architecture.md](architecture.md)
+> Related: [schema.md](schema.md) · [devices.md](devices.md) · [monitoring.md](monitoring.md) · [architecture.md](architecture.md)
 
 ---
 
@@ -22,7 +28,7 @@
 
 ---
 
-## Current Implemented Schema (Phase 1 + 2)
+## Current Implemented Schema (Phase 1–7)
 
 These tables exist in the database today.
 
@@ -31,6 +37,8 @@ migrations
 users ──< user_groups >── groups ──< group_permissions >── permissions
 users ──< api_tokens
 devices ──< device_interfaces ──< device_addresses
+devices ──< device_checks
+devices ──< alerts ──< notification_history
 ```
 
 | Table | Status |
@@ -42,11 +50,14 @@ devices ──< device_interfaces ──< device_addresses
 | `user_groups` | Implemented |
 | `group_permissions` | Implemented |
 | `api_tokens` | Implemented |
-| `devices` | Implemented — includes Phase 1 soft-delete columns |
+| `devices` | Implemented — includes soft-delete columns; write path uses new schema |
 | `device_interfaces` | Implemented — migration 0011 |
 | `device_addresses` | Implemented — migration 0012 |
+| `device_checks` | Implemented — migration 0014 (Phase 5: device-level check history) |
+| `alerts` | Implemented — migration 0015 (Phase 6: stateful alert engine) |
+| `notification_history` | Implemented — migration 0016 (Phase 7: notification dispatch log) |
 
-**Transitional dual-source state:** `devices.host` and `device_addresses` both contain the same host/IP during this transition period. All existing devices have been migrated (migration 0013). Application code still reads `devices.host` directly. Repositories will be updated to query via `device_interfaces` + `device_addresses` in a future step. See [Migration Path](#migration-path-v1-→-full-model).
+**Transitional dual-source state:** `devices.host` and `device_addresses` both contain the same host/IP. The read path and write path both use `device_addresses` (with `devices.host` as a fallback/sync target). `devices.host` can be dropped once the monitoring runner no longer needs it — currently it is kept in sync but not used as the primary address source. See [Migration Path](#migration-path-v1-→-full-model).
 
 ---
 
@@ -401,7 +412,17 @@ Data migration only — no DDL. For each active device with a non-empty `host`:
 
 `DeviceRepository::findAll()` now resolves `address` via a correlated subquery against `device_interfaces` (is_management=1) + `device_addresses` (is_primary=1), falling back to `devices.host`. Active-device filter added (`WHERE deleted_at IS NULL`). The view reads `$device['address']`.
 
-### Step 5 — Add monitored_services (migration 0014)
+### Step 4b — Device CRUD write path (no migration) ✓
+
+`DeviceRepository::create()` and `update()` now write to `device_interfaces` and `device_addresses` in addition to `devices`. `devices.host` is kept in sync as a transitional fallback. `DeviceRepository::softDelete()` sets `deleted_at`.
+
+### Step 4c — Device-level monitoring runner (migration 0014) ✓
+
+`device_checks` table added. `scripts/monitor.php` performs ICMP checks against active devices, appends rows to `device_checks`, and updates `devices.status`. See [monitoring.md](monitoring.md) for details.
+
+**Note on migration numbering:** The planned sequence had `monitored_services` at migration 0014. The actual implementation uses 0014 for `device_checks` (an intermediate step). When `monitored_services` is added, it will be migration 0015. The domain model's planned migration numbers from 0014 onwards should be treated as approximate.
+
+### Step 5 — Add monitored_services (migration 0015)
 
 Fully additive. Defines what to check per device.
 
@@ -432,12 +453,14 @@ These are ordered by value delivered and dependency chain.
 | **1** ✓ | Extend `devices` with `merged_into_device_id` + `deleted_at` | 0010 | Soft delete, merge readiness |
 | **2** ✓ | `device_interfaces` + `device_addresses` + data migration of `host` | 0011–0013 | Multi-IP support, discovery matching |
 | **3** ✓ | Refactor `DeviceRepository` to query via `device_addresses` | — (code only) | UI sees real interface/address data |
-| **4** | `monitored_services` CRUD | 0014 | Services are configurable |
-| **5** | `service_checks` + monitoring runner (CLI) | 0015 | Real check results, status updates |
-| **6** | `alerts` + deduplication logic in monitoring runner | 0016 | Stateful alerting, no duplicate rows |
-| **7** | `notification_history` + email/webhook dispatch | 0017 | Notifications sent and logged |
-| **8** | `discovery_jobs` + `discovery_findings` + scan runner | 0018–0019 | Subnet discovery, pending review UI |
-| **9** | Drop deprecated `devices.host` + `devices.last_check_at` | — | Schema cleanup |
+| **4** ✓ | Device CRUD write path + soft-delete | — (code only) | Create/edit/delete devices from the browser |
+| **5** ✓ | `device_checks` + device-level monitoring runner | 0014 | ICMP checks, status updates, check history |
+| **6** ✓ | `alerts` + deduplication logic in monitoring runner | 0015 | Stateful device_offline alerts, no duplicate rows |
+| **7** ✓ | `notification_history` + log/webhook dispatch in monitoring runner | 0016 | Notifications sent and logged with 15-min throttle |
+| **8** | `monitored_services` CRUD | 0017 | Services are configurable per device |
+| **9** | `service_checks` + service-level monitoring runner | 0018 | Per-service check results and status |
+| **10** | `discovery_jobs` + `discovery_findings` + scan runner | 0019–0020 | Subnet discovery, pending review UI |
+| **11** | Drop deprecated `devices.host` + `devices.last_check_at` | — | Schema cleanup |
 
 **Phase 3 (repository refactor) must come before Phase 5 (monitoring runner).** The runner needs to know which address to check. If `DeviceRepository` still reads `devices.host` instead of `device_addresses`, the runner cannot use the new multi-IP model.
 

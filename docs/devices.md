@@ -1,6 +1,6 @@
 # Devices Module
 
-> **Schema note:** The `devices` table is in a transitional state. `device_interfaces` and `device_addresses` exist and are backfilled. The read path now resolves addresses from the new tables. `devices.host` is still present but deprecated. See [domain-model.md](domain-model.md) for the full evolution plan.
+> **Schema note:** The `devices` table is in a transitional state. `device_interfaces` and `device_addresses` exist and are backfilled. Both the read and write paths now use the new tables. `devices.host` is still written on create/edit to keep the fallback safe but is deprecated. See [domain-model.md](domain-model.md) for the full evolution plan.
 
 ## Overview
 
@@ -15,6 +15,11 @@ Authentication is enforced by the `WebAuth` middleware — unauthenticated reque
 | Method | Path | Middleware | Description |
 |--------|------|------------|-------------|
 | `GET` | `/devices` | `WebAuth` | Renders the Devices list page |
+| `GET` | `/devices/create` | `WebAuth` | Renders the Add Device form |
+| `POST` | `/devices` | `WebAuth` | Creates a new device |
+| `GET` | `/devices/{id}/edit` | `WebAuth` | Renders the Edit Device form |
+| `POST` | `/devices/{id}` | `WebAuth` | Updates an existing device |
+| `POST` | `/devices/{id}/delete` | `WebAuth` | Soft-deletes a device |
 
 ---
 
@@ -33,11 +38,13 @@ database/
 
 app/
     Models/
-        DeviceRepository.php            ← All DB queries for devices
+        DeviceRepository.php            ← All DB queries for devices (read + write)
     NetMon/Controllers/
-        DeviceController.php            ← GET /devices handler
+        DeviceController.php            ← All device browser routes
     Views/devices/
-        index.php                       ← Content fragment (rendered into the shell)
+        index.php                       ← Device list with Edit/Delete actions
+        create.php                      ← Add Device form
+        edit.php                        ← Edit Device form
 ```
 
 ---
@@ -52,7 +59,7 @@ app/
 | `name` | VARCHAR(128) | No | — | Human-readable device label |
 | `host` | VARCHAR(255) | No | — | **Deprecated.** Single IP or hostname. Superseded by `device_addresses`. Retained until all code reads from the new tables. |
 | `status` | VARCHAR(32) | No | `unknown` | Aggregate status: `online`, `offline`, `degraded`, `unknown` |
-| `last_check_at` | VARCHAR(32) | Yes | NULL | **Deprecated.** Will be superseded by `service_checks.checked_at` once monitoring runs. |
+| `last_check_at` | VARCHAR(32) | Yes | NULL | **Transitional.** Written by the monitoring runner (`scripts/monitor.php`) after each check pass. Will be superseded by querying `device_checks.checked_at` directly once the UI reads history from the checks table. |
 | `merged_into_device_id` | INTEGER FK | Yes | NULL | Self-reference. Non-null = soft-deleted/merged record. |
 | `deleted_at` | VARCHAR(32) | Yes | NULL | Soft-delete timestamp. NULL = active. |
 | `created_at` | VARCHAR(32) | No | — | Record creation datetime |
@@ -107,8 +114,55 @@ Browser
 | Method | Description |
 |--------|-------------|
 | `findAll(): array` | Return all active devices ordered by name, with resolved `address` |
+| `findById(int $id): ?array` | Return a single active device by ID; null if not found or soft-deleted |
+| `create(array $data): int` | Create a device with a default management interface and primary address; return new device ID |
+| `update(int $id, array $data): void` | Update a device's name and primary address (upserts interface/address records) |
+| `softDelete(int $id): void` | Set `deleted_at`; device is excluded from all active queries thereafter |
 
 Returns raw arrays — no domain objects.
+
+### Write-path behavior (Phase 4)
+
+All write methods follow the same transitional pattern:
+
+1. **`devices` row** — always written first. `devices.host` is kept in sync with the primary address for the duration of the transition.
+2. **`device_interfaces` row** — one `name='Primary'`, `is_management=1` interface per device. Created on `create()`; found and updated on `update()`.
+3. **`device_addresses` row** — one `is_primary=1` address per management interface. Created on `create()`; updated on `update()` (inserted if missing).
+
+This means that after a `create()` or `update()` call:
+- `devices.host` equals the submitted address
+- The management interface primary address equals the submitted address
+- `findAll()` and `findById()` resolve the same value from both sources
+
+#### `create(array $data)`
+
+```
+INSERT devices (name, host=address, status='unknown', created_at)
+INSERT device_interfaces (device_id, name='Primary', is_management=1, description, created_at)
+INSERT device_addresses (interface_id, address, family, is_primary=1, created_at)
+```
+
+#### `update(int $id, array $data)`
+
+```
+UPDATE devices SET name=?, host=address WHERE id=?
+SELECT device_interfaces WHERE device_id=? AND is_management=1 LIMIT 1
+  → if found:
+      UPDATE device_interfaces SET description=? WHERE id=?
+      UPDATE device_addresses SET address=?, family=? WHERE interface_id=? AND is_primary=1
+      (or INSERT if primary address row is missing)
+  → if not found:
+      INSERT device_interfaces ...
+      INSERT device_addresses ...
+```
+
+#### `softDelete(int $id)`
+
+```
+UPDATE devices SET deleted_at=now WHERE id=? AND deleted_at IS NULL
+```
+
+Interface and address records are left intact. They are preserved for potential future merge workflows and historical lookups.
 
 ### Address resolution
 
@@ -166,14 +220,23 @@ The correlated subquery guarantees exactly one row per device regardless of how 
 
 ## Controller
 
-`DeviceController::index()` follows the standard two-step render pattern:
+**Class:** `App\NetMon\Controllers\DeviceController`
 
+| Method | Route | Description |
+|--------|-------|-------------|
+| `index()` | `GET /devices` | Fetch device list; render list view |
+| `createForm()` | `GET /devices/create` | Render empty Add Device form |
+| `store()` | `POST /devices` | Validate, call `create()`, redirect to `/devices` |
+| `editForm()` | `GET /devices/{id}/edit` | Load device, render pre-populated Edit form |
+| `update()` | `POST /devices/{id}` | Validate, call `update()`, redirect to `/devices` |
+| `delete()` | `POST /devices/{id}/delete` | Call `softDelete()`, redirect to `/devices` |
+
+All device controller methods set `$activeSection = 'Devices'` so the sidebar Devices link remains highlighted on create/edit sub-pages.
+
+All methods follow the standard two-step render pattern:
 ```php
-$deviceRepo = new DeviceRepository($this->container->get('db'));
-$devices    = $deviceRepo->findAll();
-
 ob_start();
-require $viewsPath . '/devices/index.php';
+require $viewsPath . '/devices/<view>.php';
 $content = ob_get_clean();
 
 http_response_code(200);
@@ -182,6 +245,14 @@ require $viewsPath . '/layouts/app.php';
 ```
 
 See [dashboard.md](dashboard.md) for full documentation of the render pattern.
+
+### Validation
+
+`DeviceController::validateDevice(string $name, string $address): array` checks:
+- Name: required, max 128 chars
+- Address: required, must be a valid IPv4, IPv6, or hostname (single-label or FQDN)
+
+Validation errors are passed as `$errors` into the form views for inline field-level display. The form re-renders at HTTP 422 with previously submitted values preserved.
 
 ---
 
@@ -207,31 +278,35 @@ Both columns currently contain the same value for all devices. The system is in 
 
 | Source | Written by | Read by | Status |
 |--------|-----------|---------|--------|
-| `devices.host` | `DeviceSeed`, future CRUD | Nothing (as of Phase 3) | Deprecated |
-| `device_addresses.address` | Migration 0013, future CRUD | `DeviceRepository::findAll()` | Canonical |
+| `devices.host` | `DeviceSeed`, `DeviceRepository::create/update` | Nothing — fallback only | Deprecated |
+| `device_addresses.address` | Migration 0013, `DeviceRepository::create/update` | `DeviceRepository::findAll/findById` | Canonical |
 
-**During this period:**
-- New code must read `device['address']`, not `device['host']`
-- `devices.host` must still be written on device create/edit so the fallback remains valid
-- Both values should be kept in sync until `devices.host` is removed
+**Current state (Phase 4):**
+- New code reads `device['address']`, not `device['host']`
+- `devices.host` is still written on create/update so the `COALESCE` fallback in read queries remains safe
+- Both values are always in sync after a write
 
 **`devices.host` can be dropped when:**
-1. All read paths use `device_addresses` (done as of Phase 3)
-2. All write paths (create, edit) also create/update the corresponding `device_addresses` row
+1. ~~All read paths use `device_addresses`~~ (done — Phase 3)
+2. ~~All write paths create/update the corresponding `device_addresses` row~~ (done — Phase 4)
 3. The monitoring runner uses `device_addresses` for check targets (Phase 5)
-4. A schema migration rebuilds the `devices` table without the column
+4. A schema migration removes the column from `devices`
 
 ---
 
-## What Is Still Missing Before Full CRUD
+## What Is Still Missing (post-Phase 4)
 
 | Feature | Notes |
 |---------|-------|
-| Add device | `POST /devices` — must write to both `devices` and `device_interfaces`/`device_addresses` |
-| Edit device | `GET /devices/{id}/edit`, `PUT /devices/{id}` — must update address records |
-| Delete device | Soft-delete via `deleted_at`; eventually hard-delete or merge |
-| Input validation | Name uniqueness, IP/hostname format check |
-| Monitoring integration | Background runner reads `device_addresses` to know what to ping |
+| ~~Add device~~ | Done — Phase 4 |
+| ~~Edit device~~ | Done — Phase 4 |
+| ~~Delete device (soft)~~ | Done — Phase 4 |
+| ~~Input validation (IP/hostname format)~~ | Done — Phase 4 |
+| ~~Monitoring integration~~ | Done — Phase 5: `scripts/monitor.php` reads `device_addresses` for check targets |
+| `devices.host` removal | Blocked until UI reads status/latency from `device_checks` rather than `devices.status` (Phase 6+) |
+| Name uniqueness check | Not yet enforced at the DB or application layer |
 | Pagination | Needed as device count grows |
 | Search / filter | Filter by status, search by name or address |
 | Permissions | `devices.view`, `devices.create`, `devices.edit`, `devices.delete` not yet defined |
+| Multi-interface editing | UI intentionally deferred; repository structure already supports it |
+| Hard-delete / merge | Out of scope until merge workflows are planned |

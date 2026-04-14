@@ -99,7 +99,13 @@ if (!isset($displayName) || $displayName === '') {
     <aside class="app-sidebar pt-2">
         <nav class="nav flex-column">
 
-            <a class="nav-link <?= $pageTitle === 'Dashboard' ? 'active' : '' ?>" href="/">
+            <?php
+            // $activeSection may be set by controllers to mark a nav item as active
+            // independently of $pageTitle (e.g. sub-pages like Add/Edit Device).
+            // Falls back to $pageTitle for backward compatibility.
+            $navActive = $activeSection ?? $pageTitle;
+            ?>
+            <a class="nav-link <?= $navActive === 'Dashboard' ? 'active' : '' ?>" href="/">
                 <i class="bi bi-speedometer2"></i>
                 Dashboard
             </a>
@@ -110,11 +116,11 @@ if (!isset($displayName) || $displayName === '') {
                 <i class="bi bi-hdd-network"></i>
                 Network
             </a>
-            <a class="nav-link <?= $pageTitle === 'Devices' ? 'active' : '' ?>" href="/devices">
+            <a class="nav-link <?= $navActive === 'Devices' ? 'active' : '' ?>" href="/devices">
                 <i class="bi bi-cpu"></i>
                 Devices
             </a>
-            <a class="nav-link disabled" href="#" tabindex="-1" aria-disabled="true">
+            <a class="nav-link <?= $navActive === 'Alerts' ? 'active' : '' ?>" href="/alerts">
                 <i class="bi bi-bell"></i>
                 Alerts
             </a>
