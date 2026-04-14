@@ -17,9 +17,12 @@ Authentication is enforced by the `WebAuth` middleware — unauthenticated reque
 | `GET` | `/devices` | `WebAuth` | Renders the Devices list page |
 | `GET` | `/devices/create` | `WebAuth` | Renders the Add Device form |
 | `POST` | `/devices` | `WebAuth` | Creates a new device |
+| `GET` | `/devices/{id}` | `WebAuth` | Renders the read-only Device Detail page |
 | `GET` | `/devices/{id}/edit` | `WebAuth` | Renders the Edit Device form |
 | `POST` | `/devices/{id}` | `WebAuth` | Updates an existing device |
 | `POST` | `/devices/{id}/delete` | `WebAuth` | Soft-deletes a device |
+
+> **Route order:** `/devices/create` is registered before `/devices/{id}` so the literal segment `create` is not mistakenly captured as an id parameter.
 
 ---
 
@@ -39,12 +42,14 @@ database/
 app/
     Models/
         DeviceRepository.php            ← All DB queries for devices (read + write)
+        DeviceCheckRepository.php       ← Check history queries (read) + check persistence
     NetMon/Controllers/
         DeviceController.php            ← All device browser routes
     Views/devices/
-        index.php                       ← Device list with Edit/Delete actions
+        index.php                       ← Device list with Edit/Delete actions; names link to detail
         create.php                      ← Add Device form
         edit.php                        ← Edit Device form
+        show.php                        ← Read-only Device Detail page
 ```
 
 ---
@@ -115,11 +120,40 @@ Browser
 |--------|-------------|
 | `findAll(): array` | Return all active devices ordered by name, with resolved `address` |
 | `findById(int $id): ?array` | Return a single active device by ID; null if not found or soft-deleted |
+| `findInterfacesWithAddresses(int $deviceId): array` | Return all interfaces with nested address arrays for one device |
 | `create(array $data): int` | Create a device with a default management interface and primary address; return new device ID |
 | `update(int $id, array $data): void` | Update a device's name and primary address (upserts interface/address records) |
 | `softDelete(int $id): void` | Set `deleted_at`; device is excluded from all active queries thereafter |
 
 Returns raw arrays — no domain objects.
+
+### `findInterfacesWithAddresses(int $deviceId): array`
+
+Used by the Device Detail page. Performs a LEFT JOIN across `device_interfaces` and `device_addresses`, then groups the flat result into a nested structure in PHP:
+
+```php
+[
+    [
+        'id'            => int,
+        'name'          => string,       // e.g. 'Primary', 'eth0'
+        'mac_address'   => string|null,
+        'is_management' => int,          // 1 = management interface
+        'description'   => string|null,
+        'addresses'     => [
+            [
+                'id'         => int,
+                'address'    => string,
+                'family'     => string,  // 'ipv4' or 'ipv6'
+                'is_primary' => int,
+            ],
+            // ...
+        ],
+    ],
+    // ...
+]
+```
+
+Management interfaces are listed first; primary addresses are listed first within each interface.
 
 ### Write-path behavior (Phase 4)
 
@@ -225,6 +259,7 @@ The correlated subquery guarantees exactly one row per device regardless of how 
 | Method | Route | Description |
 |--------|-------|-------------|
 | `index()` | `GET /devices` | Fetch device list; render list view |
+| `show()` | `GET /devices/{id}` | Load device, interfaces, recent checks; render detail view (read-only) |
 | `createForm()` | `GET /devices/create` | Render empty Add Device form |
 | `store()` | `POST /devices` | Validate, call `create()`, redirect to `/devices` |
 | `editForm()` | `GET /devices/{id}/edit` | Load device, render pre-populated Edit form |
@@ -303,7 +338,10 @@ Both columns currently contain the same value for all devices. The system is in 
 | ~~Delete device (soft)~~ | Done — Phase 4 |
 | ~~Input validation (IP/hostname format)~~ | Done — Phase 4 |
 | ~~Monitoring integration~~ | Done — Phase 5: `scripts/monitor.php` reads `device_addresses` for check targets |
+| ~~Device detail page~~ | Done — Phase 6: `GET /devices/{id}` shows overview, interfaces, recent check history |
 | `devices.host` removal | Blocked until UI reads status/latency from `device_checks` rather than `devices.status` (Phase 6+) |
+| Check history graphs | Requires charting library integration; data is already available in `device_checks` |
+| Service-level monitoring | Requires `monitored_services` + `service_checks` tables; see monitoring.md |
 | Name uniqueness check | Not yet enforced at the DB or application layer |
 | Pagination | Needed as device count grows |
 | Search / filter | Filter by status, search by name or address |

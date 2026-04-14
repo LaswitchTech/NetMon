@@ -70,7 +70,11 @@ $count = count($devices);
     $deviceId = (int) $device['id'];
 ?>
                 <tr>
-                    <td class="ps-4 fw-medium"><?= htmlspecialchars($device['name']) ?></td>
+                    <td class="ps-4 fw-medium">
+                        <a href="/devices/<?= $deviceId ?>" class="text-decoration-none text-reset">
+                            <?= htmlspecialchars($device['name']) ?>
+                        </a>
+                    </td>
                     <td class="font-monospace small"><?= htmlspecialchars($device['address']) ?></td>
                     <td>
                         <span class="badge <?= $badgeClass ?>">

@@ -36,18 +36,20 @@ class AlertRepository
     /**
      * Return all currently open alerts, newest last_seen_at first.
      *
-     * JOINs devices so each row includes `device_name` for display.
-     * Uses LEFT JOIN so orphaned alert rows (device soft-deleted but FK
-     * still intact) are still visible; device_name will be null in that case.
+     * JOINs devices and monitored_services so each row includes device_name,
+     * service_name, and service_port for display. LEFT JOINs so orphaned or
+     * device-level-only rows (no service) are still included.
      *
      * @return array[]
      */
     public function findAllOpen(): array
     {
         return $this->db->fetch(
-            "SELECT a.*, d.name AS device_name
+            "SELECT a.*, d.name AS device_name,
+                    ms.name AS service_name, ms.port AS service_port
              FROM   alerts  a
-             LEFT JOIN devices d ON d.id = a.device_id
+             LEFT JOIN devices            d  ON d.id  = a.device_id
+             LEFT JOIN monitored_services ms ON ms.id = a.service_id
              WHERE  a.status = 'open'
              ORDER BY a.last_seen_at DESC"
         );
@@ -62,12 +64,35 @@ class AlertRepository
     public function findRecent(int $limit = 100): array
     {
         return $this->db->fetch(
-            "SELECT a.*, d.name AS device_name
+            "SELECT a.*, d.name AS device_name,
+                    ms.name AS service_name, ms.port AS service_port
              FROM   alerts  a
-             LEFT JOIN devices d ON d.id = a.device_id
+             LEFT JOIN devices            d  ON d.id  = a.device_id
+             LEFT JOIN monitored_services ms ON ms.id = a.service_id
              ORDER BY a.last_seen_at DESC
              LIMIT ?",
             [$limit]
+        );
+    }
+
+    /**
+     * Return a single alert by ID with device and service context.
+     *
+     * Returns null if the alert does not exist.
+     * Used by the alert detail page and the action controllers.
+     *
+     * @return array|null  Alert row with device_name, service_name, service_port; or null.
+     */
+    public function findById(int $id): ?array
+    {
+        return $this->db->fetchOne(
+            "SELECT a.*, d.name AS device_name,
+                    ms.name AS service_name, ms.port AS service_port
+             FROM   alerts  a
+             LEFT JOIN devices            d  ON d.id  = a.device_id
+             LEFT JOIN monitored_services ms ON ms.id = a.service_id
+             WHERE  a.id = ?",
+            [$id]
         );
     }
 
@@ -80,9 +105,11 @@ class AlertRepository
     public function findByDevice(int $deviceId): array
     {
         return $this->db->fetch(
-            "SELECT a.*, d.name AS device_name
+            "SELECT a.*, d.name AS device_name,
+                    ms.name AS service_name, ms.port AS service_port
              FROM   alerts  a
-             LEFT JOIN devices d ON d.id = a.device_id
+             LEFT JOIN devices            d  ON d.id  = a.device_id
+             LEFT JOIN monitored_services ms ON ms.id = a.service_id
              WHERE  a.device_id = ?
              ORDER BY a.last_seen_at DESC",
             [$deviceId]
@@ -198,6 +225,38 @@ class AlertRepository
         $this->db->execute(
             "UPDATE alerts SET {$setClauses} WHERE id = ?",
             $values
+        );
+    }
+
+    /**
+     * Acknowledge an open alert.
+     *
+     * Sets status='acknowledged'. Guarded by AND status='open' so calling
+     * this on an already-acknowledged or resolved alert is safe (idempotent).
+     *
+     * @param int $id
+     */
+    public function acknowledge(int $id): void
+    {
+        $this->db->execute(
+            "UPDATE alerts SET status = 'acknowledged' WHERE id = ? AND status = 'open'",
+            [$id]
+        );
+    }
+
+    /**
+     * Suppress an open alert.
+     *
+     * Sets status='suppressed'. Guarded by AND status='open' so calling
+     * this on an already-suppressed or resolved alert is safe (idempotent).
+     *
+     * @param int $id
+     */
+    public function suppress(int $id): void
+    {
+        $this->db->execute(
+            "UPDATE alerts SET status = 'suppressed' WHERE id = ? AND status = 'open'",
+            [$id]
         );
     }
 

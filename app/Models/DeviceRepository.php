@@ -126,6 +126,78 @@ class DeviceRepository
         );
     }
 
+    /**
+     * Return all interfaces (with their addresses) for one active device.
+     *
+     * Each row in the returned array represents one interface; addresses are
+     * nested under the 'addresses' key as a sub-array. Returns an empty array
+     * if the device has no interface records.
+     *
+     * Management interfaces are listed first (is_management DESC), then by
+     * interface id. Within each interface, the primary address comes first.
+     *
+     * @return array<int, array{
+     *   id: int,
+     *   name: string,
+     *   mac_address: string|null,
+     *   is_management: int,
+     *   description: string|null,
+     *   addresses: array<int, array{
+     *     id: int,
+     *     address: string,
+     *     family: string,
+     *     is_primary: int
+     *   }>
+     * }>
+     */
+    public function findInterfacesWithAddresses(int $deviceId): array
+    {
+        $rows = $this->db->fetch(
+            "SELECT
+                di.id           AS iface_id,
+                di.name         AS iface_name,
+                di.mac_address,
+                di.is_management,
+                di.description  AS iface_description,
+                da.id           AS addr_id,
+                da.address,
+                da.family,
+                da.is_primary
+            FROM   device_interfaces di
+            LEFT   JOIN device_addresses da ON da.interface_id = di.id
+            WHERE  di.device_id = ?
+            ORDER  BY di.is_management DESC, di.id ASC,
+                      da.is_primary    DESC, da.id  ASC",
+            [$deviceId]
+        );
+
+        // Group flat JOIN rows into interfaces with nested address arrays.
+        $interfaces = [];
+        foreach ($rows as $row) {
+            $ifaceId = (int) $row['iface_id'];
+            if (!isset($interfaces[$ifaceId])) {
+                $interfaces[$ifaceId] = [
+                    'id'            => $ifaceId,
+                    'name'          => $row['iface_name'],
+                    'mac_address'   => $row['mac_address'],
+                    'is_management' => (int) $row['is_management'],
+                    'description'   => $row['iface_description'],
+                    'addresses'     => [],
+                ];
+            }
+            if ($row['addr_id'] !== null) {
+                $interfaces[$ifaceId]['addresses'][] = [
+                    'id'         => (int) $row['addr_id'],
+                    'address'    => $row['address'],
+                    'family'     => $row['family'],
+                    'is_primary' => (int) $row['is_primary'],
+                ];
+            }
+        }
+
+        return array_values($interfaces);
+    }
+
     // -------------------------------------------------------------------------
     // Write
     // -------------------------------------------------------------------------

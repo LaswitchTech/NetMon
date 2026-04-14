@@ -5,9 +5,11 @@
 > - **Phase 2 complete:** `device_interfaces` and `device_addresses` implemented (migrations 0011–0013).
 > - **Phase 3 complete:** `DeviceRepository` read path queries `device_addresses` with `devices.host` fallback.
 > - **Phase 4 complete:** Device CRUD (create/edit/soft-delete) writes to `device_interfaces` and `device_addresses`; keeps `devices.host` in sync.
-> - **Phase 5 complete:** `device_checks` table (migration 0014) and CLI monitoring runner (`scripts/monitor.php`) — device-level ICMP reachability checks with historical storage. Note: the implementation uses a `device_checks` table rather than the `service_checks` table planned below. `device_checks` is a device-level-only table that will coexist with `service_checks` once service-level monitoring is added.
-> - **Phase 6 complete:** `alerts` table (migration 0015) and stateful alert engine integrated into `scripts/monitor.php`. Device-level `device_offline` alerts: open on first failure, increment on re-confirmation, resolve on recovery. Full deduplication enforced. See [alerts.md](alerts.md).
-> - **Phase 7 complete:** `notification_history` table (migration 0016) and notifications engine integrated into `scripts/monitor.php`. Log and webhook channels, 15-minute throttle, `open`/`reminder` notification types, full dispatch history. See [notifications.md](notifications.md).
+> - **Phase 5 complete:** `device_checks` table (migration 0014) and CLI monitoring runner (`scripts/monitor.php`) — device-level ICMP reachability checks with historical storage. `device_checks` is device-level only and coexists with `service_checks`.
+> - **Phase 6 complete:** `alerts` table (migration 0015) and stateful alert engine integrated into `scripts/monitor.php`. Device-level `device_offline` alerts with full deduplication. See [alerts.md](alerts.md).
+> - **Phase 7 complete:** `notification_history` table (migration 0016) and notifications engine integrated into `scripts/monitor.php`. Log and webhook channels, 15-minute throttle, `open`/`reminder` notification types. See [notifications.md](notifications.md).
+> - **Phase 8 complete:** `monitored_services` (migration 0017) and `service_checks` (migration 0018) implemented. `TcpChecker` added. Service-level TCP checks integrated into the monitoring runner. Device detail page shows services and their current state. See [services.md](services.md).
+> - **Phase 9 complete:** `service_down` alert type wired into the monitoring runner's service pass. Identical deduplication and notification logic as `device_offline`. Notifications flow through existing log/webhook channels automatically. See [alerts.md](alerts.md).
 > - All subsequent phases are planned but not yet implemented.
 >
 > Related: [schema.md](schema.md) · [devices.md](devices.md) · [monitoring.md](monitoring.md) · [architecture.md](architecture.md)
@@ -28,7 +30,7 @@
 
 ---
 
-## Current Implemented Schema (Phase 1–7)
+## Current Implemented Schema (Phase 1–8)
 
 These tables exist in the database today.
 
@@ -38,6 +40,7 @@ users ──< user_groups >── groups ──< group_permissions >── permi
 users ──< api_tokens
 devices ──< device_interfaces ──< device_addresses
 devices ──< device_checks
+devices ──< monitored_services ──< service_checks
 devices ──< alerts ──< notification_history
 ```
 
@@ -56,6 +59,8 @@ devices ──< alerts ──< notification_history
 | `device_checks` | Implemented — migration 0014 (Phase 5: device-level check history) |
 | `alerts` | Implemented — migration 0015 (Phase 6: stateful alert engine) |
 | `notification_history` | Implemented — migration 0016 (Phase 7: notification dispatch log) |
+| `monitored_services` | Implemented — migration 0017 (Phase 8: service configuration per device) |
+| `service_checks` | Implemented — migration 0018 (Phase 8: service-level check history) |
 
 **Transitional dual-source state:** `devices.host` and `device_addresses` both contain the same host/IP. The read path and write path both use `device_addresses` (with `devices.host` as a fallback/sync target). `devices.host` can be dropped once the monitoring runner no longer needs it — currently it is kept in sync but not used as the primary address source. See [Migration Path](#migration-path-v1-→-full-model).
 
@@ -422,19 +427,23 @@ Data migration only — no DDL. For each active device with a non-empty `host`:
 
 **Note on migration numbering:** The planned sequence had `monitored_services` at migration 0014. The actual implementation uses 0014 for `device_checks` (an intermediate step). When `monitored_services` is added, it will be migration 0015. The domain model's planned migration numbers from 0014 onwards should be treated as approximate.
 
-### Step 5 — Add monitored_services (migration 0015)
+### Step 5 — Add monitored_services (migration 0017) ✓
 
-Fully additive. Defines what to check per device.
+Fully additive. Defines TCP services to check per device. `monitoring_enabled`,
+`expected_state`, `last_state`, and `last_check_at` columns are all present.
 
-### Step 6 — Add service_checks (migration 0015)
+### Step 6 — Add service_checks (migration 0018) ✓
 
-Fully additive. Stores check results; drives `devices.status` updates.
+Fully additive. Append-only historical log of service check results. Indexed on
+`(service_id, checked_at)` for efficient per-service time-range queries.
 
-### Step 7 — Add alerts and notification_history (migrations 0016–0017)
+### Step 7 — Service-level check runner ✓ (code only, no migration)
 
-Fully additive.
+`TcpChecker` added. `scripts/monitor.php` extended with a second service check
+pass after device checks. `ServiceCheckRepository` handles target selection,
+check persistence, and state updates.
 
-### Step 8 — Add discovery tables (migrations 0018–0019)
+### Step 8 — Add discovery tables (migrations 0019–0020)
 
 Fully additive.
 
@@ -457,10 +466,11 @@ These are ordered by value delivered and dependency chain.
 | **5** ✓ | `device_checks` + device-level monitoring runner | 0014 | ICMP checks, status updates, check history |
 | **6** ✓ | `alerts` + deduplication logic in monitoring runner | 0015 | Stateful device_offline alerts, no duplicate rows |
 | **7** ✓ | `notification_history` + log/webhook dispatch in monitoring runner | 0016 | Notifications sent and logged with 15-min throttle |
-| **8** | `monitored_services` CRUD | 0017 | Services are configurable per device |
-| **9** | `service_checks` + service-level monitoring runner | 0018 | Per-service check results and status |
-| **10** | `discovery_jobs` + `discovery_findings` + scan runner | 0019–0020 | Subnet discovery, pending review UI |
-| **11** | Drop deprecated `devices.host` + `devices.last_check_at` | — | Schema cleanup |
+| **8** ✓ | `monitored_services` + `service_checks` + TCP service check runner | 0017–0018 | Service-level monitoring foundation, device detail shows services |
+| **9** ✓ | `service_down` alert type wired in runner service pass | — (code only) | Service failures create stateful alerts; notifications via existing channels |
+| **10** | `monitored_services` CRUD UI | — (code only) | Services configurable from the browser |
+| **11** | `discovery_jobs` + `discovery_findings` + scan runner | 0019–0020 | Subnet discovery, pending review UI |
+| **12** | Drop deprecated `devices.host` + `devices.last_check_at` | — | Schema cleanup |
 
 **Phase 3 (repository refactor) must come before Phase 5 (monitoring runner).** The runner needs to know which address to check. If `DeviceRepository` still reads `devices.host` instead of `device_addresses`, the runner cannot use the new multi-IP model.
 

@@ -76,6 +76,66 @@ class DeviceCheckRepository
     }
 
     // -------------------------------------------------------------------------
+    // History read (UI)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the most recent check rows for one device, newest first.
+     *
+     * Used by the device detail page to display monitoring history.
+     * The result is ordered by checked_at DESC so callers can render the
+     * table without additional sorting.
+     *
+     * @param  int $deviceId  Device to query
+     * @param  int $limit     Maximum number of rows to return (default 50)
+     * @return array<int, array{
+     *   id: int,
+     *   checked_at: string,
+     *   status: string,
+     *   latency_ms: int|null,
+     *   message: string|null
+     * }>
+     */
+    public function findRecentByDevice(int $deviceId, int $limit = 50): array
+    {
+        return $this->db->fetch(
+            "SELECT id, checked_at, status, latency_ms, message
+             FROM   device_checks
+             WHERE  device_id = ?
+             ORDER  BY checked_at DESC
+             LIMIT  ?",
+            [$deviceId, $limit]
+        );
+    }
+
+    /**
+     * Return check history for one device, oldest first, for graph rendering.
+     *
+     * Returns only the fields needed for visualization (no message). Ordered
+     * ASC so that graph libraries receive points in chronological order without
+     * needing to reverse the array.
+     *
+     * @param  int $deviceId  Device to query
+     * @param  int $limit     Maximum number of rows (default 100)
+     * @return array<int, array{
+     *   checked_at: string,
+     *   status: string,
+     *   latency_ms: int|null
+     * }>
+     */
+    public function findHistoryByDevice(int $deviceId, int $limit = 100): array
+    {
+        return $this->db->fetch(
+            "SELECT checked_at, status, latency_ms
+             FROM   device_checks
+             WHERE  device_id = ?
+             ORDER  BY checked_at ASC
+             LIMIT  ?",
+            [$deviceId, $limit]
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Check persistence (append-only)
     // -------------------------------------------------------------------------
 

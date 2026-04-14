@@ -1,8 +1,8 @@
 # Alerts
 
-> **Status (Phase 8):** Device-level (`device_offline`) alerts are implemented with full notification integration and a read-only browser UI. The UI shows open and recent alerts with device name, status badge, occurrence count, and notification timestamps. Service-level alerts, acknowledgement, suppression, and resolved notifications are planned but not yet built.
+> **Status (Phase 10):** Device-level (`device_offline`) and service-level (`service_down`) alerts are both implemented with full notification integration. The browser UI now includes an alert detail page, service context in the list, and Acknowledge/Suppress actions. Resolved notifications and escalation are planned but not yet built.
 >
-> Related: [monitoring.md](monitoring.md) · [notifications.md](notifications.md) · [domain-model.md](domain-model.md) · [schema.md](schema.md)
+> Related: [monitoring.md](monitoring.md) · [services.md](services.md) · [notifications.md](notifications.md) · [domain-model.md](domain-model.md) · [schema.md](schema.md)
 
 ---
 
@@ -18,11 +18,13 @@ When a failure is first detected, one alert row is created. If the same failure 
 
 ## Alert Lifecycle
 
+The same lifecycle applies to both device-level and service-level alerts.
+
 ```
-Failure detected (device offline)
+Failure detected
     │
     ▼
-findOpenAlert(device_id, null, 'device_offline')
+findOpenAlert(device_id, service_id_or_null, alert_type)
     │
     ├─ Alert found (already open)
     │       → incrementOccurrence: last_seen_at = now, occurrence_count++
@@ -30,10 +32,10 @@ findOpenAlert(device_id, null, 'device_offline')
     └─ No alert found
             → createAlert: status='open', first_seen_at=now, last_seen_at=now
 
-Recovery detected (device online)
+Recovery detected
     │
     ▼
-findOpenAlert(device_id, null, 'device_offline')
+findOpenAlert(device_id, service_id_or_null, alert_type)
     │
     ├─ Alert found (open)
     │       → resolveAlert: status='resolved', resolved_at=now, last_seen_at=now
@@ -133,8 +135,14 @@ A standard UNIQUE constraint would cover `(device_id, service_id, alert_type)` b
 | Method | Description |
 |--------|-------------|
 | `findOpenAlert(int $deviceId, ?int $serviceId, string $type): ?array` | Deduplication check: is there already an open alert? |
+| `findAllOpen(): array` | All open alerts with device + service context (JOINs devices + monitored_services) |
+| `findRecent(int $limit = 100): array` | Most recent N alerts of any status with device + service context |
+| `findById(int $id): ?array` | Single alert by ID with device + service context; null if not found |
+| `findByDevice(int $deviceId): array` | All alerts for a specific device with service context |
 | `createAlert(array $data): int` | Insert a new open alert row; return new ID |
 | `updateAlert(int $alertId, array $fields): void` | Generic field update (e.g. `last_notified_at` when notifications are added) |
+| `acknowledge(int $id): void` | Set status='acknowledged'; guarded by AND status='open' (idempotent) |
+| `suppress(int $id): void` | Set status='suppressed'; guarded by AND status='open' (idempotent) |
 | `resolveAlert(int $alertId, string $resolvedAt): void` | Set status='resolved'; set resolved_at and last_seen_at; idempotent |
 | `incrementOccurrence(int $alertId, string $lastSeenAt): void` | occurrence_count++ and update last_seen_at |
 | `touchLastSeen(int $alertId, string $lastSeenAt): void` | Update last_seen_at only (no count change) |
@@ -147,22 +155,40 @@ A standard UNIQUE constraint would cover `(device_id, service_id, alert_type)` b
 
 **Script:** `scripts/monitor.php`
 
-Alert logic runs after `updateDeviceStatus()`, inside the per-device loop, and only when `$result['status'] !== 'error'` (i.e. the check actually executed — not just a runner failure):
+Alert logic runs inside both the device and service check loops. It is skipped when the check status is `'error'` (the runner itself failed — not an actual device/service failure).
+
+### Device pass
 
 ```
 For each device:
-    1. Pinger::check(target_address)              ← ICMP check
-    2. DeviceCheckRepository::saveCheck()         ← append to device_checks
-    3. DeviceCheckRepository::updateDeviceStatus()  ← update devices.status
+    1. Pinger::check(target_address)
+    2. DeviceCheckRepository::saveCheck()
+    3. DeviceCheckRepository::updateDeviceStatus()
     4. Alert logic → sets $pendingNotification:
          if deviceStatus == 'offline':
-             findOpenAlert → create or increment
+             findOpenAlert(device_id, NULL, 'device_offline') → create or increment
          if deviceStatus == 'online':
-             findOpenAlert → resolve if present
-    5. Notification block (Phase 7):
+             findOpenAlert(device_id, NULL, 'device_offline') → resolve if present
+    5. Notification block:
          if $pendingNotification set AND channels configured AND throttle elapsed:
-             dispatch to all channels → record in notification_history
-             update alerts.last_notified_at
+             dispatch → record in notification_history → update last_notified_at
+```
+
+### Service pass
+
+```
+For each service:
+    1. TcpChecker::check(target_address, port)
+    2. ServiceCheckRepository::saveCheck()
+    3. ServiceCheckRepository::updateServiceState()
+    4. Alert logic → sets $svcPendingNotification:
+         if svcResult == 'down':
+             findOpenAlert(device_id, service_id, 'service_down') → create or increment
+         if svcResult == 'up':
+             findOpenAlert(device_id, service_id, 'service_down') → resolve if present
+    5. Notification block:
+         if $svcPendingNotification set AND channels configured AND throttle elapsed:
+             dispatch → record in notification_history → update last_notified_at
 ```
 
 **Dry-run mode** (`--dry-run`) skips all DB writes including alert and notification operations.
@@ -173,53 +199,86 @@ For each device:
              ↳ alert #3 opened: device_offline
              ↳ notify [log] ✓ open
 
-  [OK]       File Server              192.168.1.10         4 ms
-             ↳ alert #3 resolved (device back online)
+  [DOWN]   File Server / SSH          192.168.1.10:22      —
+             ↳ alert #7 opened: service_down
+             ↳ notify [log] ✓ open
+
+  [UP]     File Server / SSH          192.168.1.10:22      8 ms
+             ↳ alert #7 resolved (service back up)
 ```
 
 ---
 
 ## Current Alert Types
 
-| Type | Trigger | Phase added |
-|------|---------|-------------|
-| `device_offline` | Device fails ICMP ping check | Phase 6 |
+| Type | `service_id` | Trigger | Phase added |
+|------|-------------|---------|-------------|
+| `device_offline` | NULL | Device fails ICMP ping check | Phase 6 |
+| `service_down` | set | Service TCP check returns `down` | Phase 9 |
+
+**`device_offline`** uses `service_id = NULL` — it is a device-level condition, not tied to any particular service. `findOpenAlert()` uses an explicit `IS NULL` branch for this lookup.
+
+**`service_down`** uses a non-null `service_id` pointing to the `monitored_services` row. Each enabled service gets its own independent alert lifecycle. A device with three monitored services can have up to three simultaneous open `service_down` alerts.
 
 ---
 
 ## Browser UI
 
-**Route:** `GET /alerts` (requires session authentication)
+### Alerts list
+
+**Route:** `GET /alerts[?filter=open|all]` (requires session authentication)
 
 **Controller:** `App\NetMon\Controllers\AlertController::index()`
 
-The Alerts page is reachable from the sidebar navigation. It provides a read-only view of alert state.
+The Alerts page is reachable from the sidebar navigation.
 
-### Filter toggle
-
-A filter toggle in the toolbar controls which alerts are shown:
+#### Filter toggle
 
 | URL | Repository method | Shows |
 |-----|------------------|-------|
 | `/alerts` or `/alerts?filter=open` | `findAllOpen()` | All currently open alerts, newest `last_seen_at` first |
 | `/alerts?filter=all` | `findRecent(100)` | The 100 most recent alerts of any status |
 
-### Columns
+#### Columns
 
 | Column | Source | Notes |
 |--------|--------|-------|
-| Device | `alerts.device_id` JOIN `devices.name` | Falls back to `#id` if device name is unavailable |
+| Device | `alerts.device_id` JOIN `devices.name` | Linked to `/alerts/{id}`; falls back to `#id` |
 | Type | `alerts.alert_type` | Formatted: `device_offline` → "Device offline" |
+| Service | `alerts.service_id` JOIN `monitored_services` | Name and port, or "—" for device-level alerts |
 | Status | `alerts.status` | Badge: Open (red), Resolved (green), Ack'd (yellow), Suppressed (grey) |
 | Count | `alerts.occurrence_count` | How many consecutive check passes confirmed the failure |
 | First seen | `alerts.first_seen_at` | When the condition was first detected |
 | Last seen | `alerts.last_seen_at` | When the condition was last confirmed |
 | Last notified | `alerts.last_notified_at` | "Never" if no notification has been sent |
 
-### Empty states
+#### Empty states
 
 - `filter=open`: "No open alerts — all devices are healthy."
 - `filter=all`: "No alerts recorded yet."
+
+---
+
+### Alert detail page
+
+**Route:** `GET /alerts/{id}` (requires session authentication)
+
+**Controller:** `App\NetMon\Controllers\AlertController::show()`
+
+Shows full context for a single alert including device link, service context (if applicable), all timestamps, occurrence count, and notification history.
+
+#### Actions (open alerts only)
+
+| Action | Route | Controller method | Effect |
+|--------|-------|-------------------|--------|
+| Acknowledge | `POST /alerts/{id}/acknowledge` | `AlertController::acknowledge()` | Sets status=`acknowledged` |
+| Suppress | `POST /alerts/{id}/suppress` | `AlertController::suppress()` | Sets status=`suppressed` |
+
+Both actions redirect back to the alert detail page after the transition. Both are guarded by `AND status = 'open'` in the repository layer — submitting the form on an already-transitioned alert is safe and has no effect.
+
+#### Notification history table
+
+Columns: Sent at, Channel, Type, Status (badge), Message. Sourced from `NotificationRepository::findRecentByAlert()` (most recent 20 rows).
 
 ---
 
@@ -227,9 +286,11 @@ A filter toggle in the toolbar controls which alerts are shown:
 
 | Item | Notes |
 |------|-------|
-| `resolved` notification | Currently alerts resolve silently; no notification is dispatched on recovery |
+| ~~Service-level alerts~~ | Done — `service_down` alert type wired in Phase 9 |
+| ~~`acknowledged` / `suppressed` UI~~ | Done — POST routes and detail page implemented in Phase 10 |
+| ~~Alert detail view~~ | Done — `/alerts/{id}` with overview, actions, and notification history |
+| ~~Alerts UI — service column~~ | Done — Service column added to list; device name links to detail page |
+| `resolved` notification | Alerts resolve silently; no notification dispatched on recovery |
+| Service name in notification payload | Channels currently receive device context only; service name / port not surfaced |
 | Email channel | Requires SMTP configuration; not yet built. See [notifications.md](notifications.md). |
 | Escalation | Defined in domain model but not yet designed in detail |
-| `acknowledged` / `suppressed` UI | POST routes to transition alert status; not yet built |
-| Service-level alerts | Requires `monitored_services` + `service_checks` (future phase) |
-| Alert detail view | Drill-down page showing notification history for a specific alert |

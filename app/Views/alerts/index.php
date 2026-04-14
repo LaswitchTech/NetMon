@@ -57,19 +57,20 @@ $formatType = static function (string $type): string {
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th class="ps-4" style="width:20%">Device</th>
-                    <th style="width:18%">Type</th>
+                    <th class="ps-4" style="width:18%">Device</th>
+                    <th style="width:15%">Type</th>
+                    <th style="width:13%">Service</th>
                     <th style="width:10%">Status</th>
-                    <th style="width:8%" class="text-end">Count</th>
-                    <th style="width:16%">First seen</th>
-                    <th style="width:16%">Last seen</th>
-                    <th style="width:12%">Last notified</th>
+                    <th style="width:7%" class="text-end">Count</th>
+                    <th style="width:14%">First seen</th>
+                    <th style="width:14%">Last seen</th>
+                    <th style="width:9%">Last notified</th>
                 </tr>
             </thead>
             <tbody>
 <?php if (empty($alerts)): ?>
                 <tr>
-                    <td colspan="7" class="text-center py-5 text-muted">
+                    <td colspan="8" class="text-center py-5 text-muted">
                         <i class="bi bi-bell-slash opacity-25" style="font-size: 2.5rem; display: block; margin-bottom: .75rem"></i>
                         <?php if ($filter === 'open'): ?>
                             No open alerts &mdash; all devices are healthy.
@@ -89,17 +90,28 @@ $formatType = static function (string $type): string {
         default        => ['class' => 'bg-secondary','label' => htmlspecialchars($alert['status'])],
     };
 
-    $deviceName    = ($alert['device_name'] ?? '') !== ''
+    $deviceLabel   = ($alert['device_name'] ?? '') !== ''
         ? htmlspecialchars($alert['device_name'])
-        : '<span class="text-muted">Device #' . (int) $alert['device_id'] . '</span>';
+        : 'Device #' . (int) $alert['device_id'];
+
+    $hasService    = isset($alert['service_name']) && $alert['service_name'] !== null;
+
+    $serviceCell   = $hasService
+        ? htmlspecialchars($alert['service_name']) . '<span class="text-muted font-monospace ms-1 small">:' . (int) $alert['service_port'] . '</span>'
+        : '<span class="text-muted">&mdash;</span>';
 
     $lastNotified  = $alert['last_notified_at'] !== null
         ? htmlspecialchars($alert['last_notified_at'])
         : '<span class="text-muted">Never</span>';
 ?>
                 <tr>
-                    <td class="ps-4 fw-medium"><?= $deviceName ?></td>
+                    <td class="ps-4 fw-medium">
+                        <a href="/alerts/<?= (int) $alert['id'] ?>" class="text-decoration-none">
+                            <?= $deviceLabel ?>
+                        </a>
+                    </td>
                     <td class="small"><?= htmlspecialchars($formatType($alert['alert_type'])) ?></td>
+                    <td class="small"><?= $serviceCell ?></td>
                     <td>
                         <span class="badge <?= $statusBadge['class'] ?>">
                             <?= $statusBadge['label'] ?>

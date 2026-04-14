@@ -3,7 +3,9 @@
 namespace App\NetMon\Controllers;
 
 use App\Core\Controller;
+use App\Models\DeviceCheckRepository;
 use App\Models\DeviceRepository;
+use App\Models\ServiceCheckRepository;
 
 class DeviceController extends Controller
 {
@@ -35,6 +37,57 @@ class DeviceController extends Controller
 
         ob_start();
         require $viewsPath . '/devices/index.php';
+        $content = ob_get_clean();
+
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        require $viewsPath . '/layouts/app.php';
+    }
+
+    /**
+     * GET /devices/{id}
+     *
+     * Renders the read-only Device Detail page.
+     * Returns 404 if the device does not exist or has been soft-deleted.
+     */
+    public function show(array $params = []): void
+    {
+        $id         = (int) ($params['id'] ?? 0);
+        $deviceRepo = new DeviceRepository($this->container->get('db'));
+        $device     = $deviceRepo->findById($id);
+
+        if ($device === null) {
+            http_response_code(404);
+            echo 'Device not found.';
+            return;
+        }
+
+        $interfaces = $deviceRepo->findInterfacesWithAddresses($id);
+
+        $checkRepo    = new DeviceCheckRepository($this->container->get('db'));
+        $recentChecks  = $checkRepo->findRecentByDevice($id, 50);
+        $historySeries = $checkRepo->findHistoryByDevice($id, 100);
+
+        $serviceRepo = new ServiceCheckRepository($this->container->get('db'));
+        $services    = $serviceRepo->findByDevice($id);
+
+        // Load graph-ready history for each service (keyed by service id).
+        // One query per service; typical devices have 2–5 services so this is acceptable.
+        $serviceHistories = [];
+        foreach ($services as $svc) {
+            $svcId = (int) $svc['id'];
+            $serviceHistories[$svcId] = $serviceRepo->findHistoryByService($svcId, 100);
+        }
+
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+
+        $pageTitle     = htmlspecialchars($device['name']);
+        $activeSection = 'Devices';
+
+        $viewsPath = __DIR__ . '/../../Views';
+
+        ob_start();
+        require $viewsPath . '/devices/show.php';
         $content = ob_get_clean();
 
         http_response_code(200);

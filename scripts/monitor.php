@@ -1,27 +1,35 @@
 <?php
 
 /**
- * NetMon — Device Monitoring Runner (Phase 7)
+ * NetMon — Monitoring Runner (Phase 8)
  *
- * Performs one pass of device-level reachability checks: pings every active
- * device, stores results in device_checks, updates devices.status, manages
- * stateful alerts, and dispatches notifications with 15-minute throttling.
+ * Performs one pass of:
+ *   1. Device-level ICMP reachability checks (ping all active devices)
+ *   2. Service-level TCP connectivity checks (TCP-connect all enabled services)
+ *
+ * Device pass: pings every active device, stores results in device_checks,
+ * updates devices.status, manages stateful alerts, and dispatches notifications
+ * with 15-minute throttling.
+ *
+ * Service pass: TCP-connects every enabled service on active devices, stores
+ * results in service_checks, updates monitored_services.last_state.
+ * Service-level alerts are not yet implemented (Phase 9).
  *
  * Usage:
  *   php scripts/monitor.php            # run one monitoring pass
- *   php scripts/monitor.php --verbose  # show per-device detail including alert and notification events
+ *   php scripts/monitor.php --verbose  # show per-device/service detail
  *   php scripts/monitor.php --dry-run  # resolve targets — no DB writes, no notifications sent
  *
  * Schedule with cron for continuous monitoring:
  *   * * * * * php /path/to/scripts/monitor.php >> /path/to/storage/logs/monitor.log 2>&1
  *
- * Limitations (Phase 7):
- *   - Device-level (ICMP) checks only.
- *   - Notifications for device_offline alerts only (open + reminder).
- *   - No service/port checks yet.
+ * Limitations (Phase 9):
+ *   - Service checks: TCP only. No UDP, HTTP, or ICMP service checks yet.
  *   - No daemon mode — one pass per invocation.
- *   - Uses exec(ping). If exec() is disabled, checks are recorded as 'error'
- *     and neither device status, alerts, nor notifications are updated.
+ *   - Device checks use exec(ping). If exec() is disabled, checks are recorded
+ *     as 'error' and device status/alerts are not updated.
+ *   - Service checks use fsockopen() — no exec() required.
+ *   - 'resolved' notifications are not yet dispatched (alert resolves silently).
  */
 
 declare(strict_types=1);
@@ -54,7 +62,9 @@ use App\Core\SQLiteDriver;
 use App\Models\AlertRepository;
 use App\Models\DeviceCheckRepository;
 use App\Models\NotificationRepository;
+use App\Models\ServiceCheckRepository;
 use App\Monitoring\Pinger;
+use App\Monitoring\TcpChecker;
 use App\Notifications\LogChannel;
 use App\Notifications\WebhookChannel;
 
@@ -79,10 +89,12 @@ $dryRun  = in_array('--dry-run', $args, true);
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
-$repo       = new DeviceCheckRepository($db);
-$alertRepo  = new AlertRepository($db);
-$notifRepo  = new NotificationRepository($db);
-$pinger     = new Pinger();
+$repo        = new DeviceCheckRepository($db);
+$alertRepo   = new AlertRepository($db);
+$notifRepo   = new NotificationRepository($db);
+$serviceRepo = new ServiceCheckRepository($db);
+$pinger      = new Pinger();
+$tcpChecker  = new TcpChecker();
 
 // ---------------------------------------------------------------------------
 // Notification channels
@@ -325,6 +337,210 @@ foreach ($targets as $device) {
 }
 
 // ---------------------------------------------------------------------------
+// Service checks
+// ---------------------------------------------------------------------------
+$serviceTargets  = $serviceRepo->findServiceTargets();
+$totalServices   = count($serviceTargets);
+
+$countSvcUp      = 0;
+$countSvcDown    = 0;
+$countSvcError   = 0;
+$countSvcSkipped = 0;
+
+if ($totalServices > 0) {
+    echo "\nChecking {$totalServices} service(s)...\n\n";
+
+    foreach ($serviceTargets as $service) {
+        $serviceId     = (int) $service['service_id'];
+        $serviceName   = $service['service_name'];
+        $deviceId      = (int) $service['device_id'];
+        $deviceName    = $service['device_name'];
+        $targetAddress = $service['target_address'];
+        $port          = (int) $service['port'];
+
+        // Skip services whose device has no resolvable target address.
+        if ($targetAddress === null || trim($targetAddress) === '') {
+            $countSvcSkipped++;
+            $label   = str_pad('[SKIP]', 10);
+            $nameCol = str_pad("{$deviceName} / {$serviceName}", 36);
+            echo "  {$label} {$nameCol} No target address — service skipped\n";
+            continue;
+        }
+
+        if ($dryRun) {
+            $label   = str_pad('[DRY]', 10);
+            $nameCol = str_pad("{$deviceName} / {$serviceName}", 36);
+            $addrCol = str_pad("{$targetAddress}:{$port}", 26);
+            echo "  {$label} {$nameCol} {$addrCol} (would check)\n";
+            continue;
+        }
+
+        // Perform the TCP connectivity check.
+        $svcResult = $tcpChecker->check($targetAddress, $port);
+
+        // Save check row (append-only historical log).
+        $serviceRepo->saveCheck([
+            'service_id' => $serviceId,
+            'checked_at' => $timestamp,
+            'status'     => $svcResult['status'],
+            'latency_ms' => $svcResult['latency_ms'],
+            'message'    => $svcResult['message'],
+        ]);
+
+        // Update state + manage alerts + dispatch notifications.
+        // 'error' means the runner itself failed (e.g. no target address) —
+        // preserve last_state and skip all alert/notification logic, same as device checks.
+        if ($svcResult['status'] !== 'error') {
+            $serviceRepo->updateServiceState($serviceId, $svcResult['status'], $timestamp);
+
+            // ---- Alert logic ------------------------------------------------
+            // Deduplication rule: there is at most one OPEN 'service_down' alert
+            // per (device_id, service_id) at any time. On failure we create-or-update;
+            // on recovery we resolve the open alert if one is present.
+            //
+            // $svcPendingNotification is set here and consumed by the notification
+            // block below. It carries the alert row and the notification type
+            // ('open' or 'reminder') needed for throttle evaluation and dispatch.
+            $svcPendingNotification = null;
+
+            if ($svcResult['status'] === 'down') {
+                $openAlert = $alertRepo->findOpenAlert($deviceId, $serviceId, 'service_down');
+
+                if ($openAlert !== null) {
+                    // Alert already open — re-confirm: update last_seen and count.
+                    $alertRepo->incrementOccurrence((int) $openAlert['id'], $timestamp);
+
+                    // Re-fetch so occurrence_count reflects the increment we just wrote.
+                    $openAlert['occurrence_count'] = (int) $openAlert['occurrence_count'] + 1;
+                    $svcPendingNotification = ['type' => 'reminder', 'alert' => $openAlert];
+
+                    if ($verbose) {
+                        echo "           ↳ alert #" . $openAlert['id'] . " re-confirmed (occurrence #" . $openAlert['occurrence_count'] . ")\n";
+                    }
+                } else {
+                    // No open alert — create one.
+                    $newAlertId = $alertRepo->createAlert([
+                        'device_id'     => $deviceId,
+                        'service_id'    => $serviceId,
+                        'alert_type'    => 'service_down',
+                        'first_seen_at' => $timestamp,
+                        'last_seen_at'  => $timestamp,
+                    ]);
+
+                    // Build a minimal alert array for the notification block.
+                    // last_notified_at is NULL on a freshly created alert.
+                    $svcPendingNotification = [
+                        'type'  => 'open',
+                        'alert' => [
+                            'id'               => $newAlertId,
+                            'alert_type'       => 'service_down',
+                            'occurrence_count' => 1,
+                            'first_seen_at'    => $timestamp,
+                            'last_seen_at'     => $timestamp,
+                            'last_notified_at' => null,
+                        ],
+                    ];
+
+                    if ($verbose) {
+                        echo "           ↳ alert #{$newAlertId} opened: service_down\n";
+                    }
+                }
+            } elseif ($svcResult['status'] === 'up') {
+                $openAlert = $alertRepo->findOpenAlert($deviceId, $serviceId, 'service_down');
+
+                if ($openAlert !== null) {
+                    // Service recovered — resolve the open alert.
+                    $alertRepo->resolveAlert((int) $openAlert['id'], $timestamp);
+
+                    if ($verbose) {
+                        echo "           ↳ alert #" . $openAlert['id'] . " resolved (service back up)\n";
+                    }
+                }
+            }
+
+            // ---- Notification logic -----------------------------------------
+            // Dispatch to enabled channels if:
+            //   a) there is a pending notification from the alert block above, AND
+            //   b) the throttle window has elapsed (or this is the first notification), AND
+            //   c) at least one channel is configured.
+            //
+            // Device context is passed to channels using the same contract as device
+            // alerts — channels receive (type, alert, device) where device carries
+            // id, name, and target_address.
+            if ($svcPendingNotification !== null && !empty($channels)) {
+                $notifyType    = $svcPendingNotification['type'];
+                $notifyAlert   = $svcPendingNotification['alert'];
+                $notifyAlertId = (int) $notifyAlert['id'];
+
+                $deviceContext = [
+                    'id'             => $deviceId,
+                    'name'           => $deviceName,
+                    'target_address' => $targetAddress,
+                ];
+
+                if ($shouldNotify($notifyAlert, $throttleSeconds)) {
+                    foreach ($channels as $channel) {
+                        $notifResult = $channel->send($notifyType, $notifyAlert, $deviceContext);
+
+                        $notifRepo->record([
+                            'alert_id'          => $notifyAlertId,
+                            'channel'           => $channel->name(),
+                            'recipient'         => $channel->recipient(),
+                            'notification_type' => $notifyType,
+                            'status'            => $notifResult['status'],
+                            'message'           => $notifResult['message'],
+                            'sent_at'           => $timestamp,
+                        ]);
+
+                        if ($verbose) {
+                            $icon = $notifResult['status'] === 'sent' ? '✓' : '✗';
+                            echo "           ↳ notify [{$channel->name()}] {$icon} {$notifyType}";
+                            if ($notifResult['message'] !== null) {
+                                echo " ({$notifResult['message']})";
+                            }
+                            echo "\n";
+                        }
+                    }
+
+                    // Stamp the alert so the throttle window resets.
+                    $alertRepo->updateAlert($notifyAlertId, ['last_notified_at' => $timestamp]);
+                }
+            }
+            // -----------------------------------------------------------------
+        }
+
+        // Track counts.
+        match ($svcResult['status']) {
+            'up'    => $countSvcUp++,
+            'error' => $countSvcError++,
+            default => $countSvcDown++,
+        };
+
+        // Format output line.
+        $label = match ($svcResult['status']) {
+            'up'    => str_pad('[UP]',    10),
+            'down'  => str_pad('[DOWN]',  10),
+            'error' => str_pad('[ERROR]', 10),
+            default => str_pad('[?]',     10),
+        };
+
+        $nameCol    = str_pad("{$deviceName} / {$serviceName}", 36);
+        $addrCol    = str_pad("{$targetAddress}:{$port}", 26);
+        $latencyStr = $svcResult['latency_ms'] !== null
+            ? $svcResult['latency_ms'] . ' ms'
+            : '—';
+
+        $line = "  {$label} {$nameCol} {$addrCol} {$latencyStr}";
+
+        if ($verbose && $svcResult['message'] !== null) {
+            $line .= "  ({$svcResult['message']})";
+        }
+
+        echo $line . "\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 if (!$dryRun) {
@@ -339,6 +555,17 @@ if (!$dryRun) {
     if ($countSkipped > 0) $parts[] = "{$countSkipped} skipped";
 
     echo "Done. " . implode(', ', $parts) . ". ({$elapsed}s)\n";
+
+    if ($totalServices > 0) {
+        $svcParts = [];
+        if ($countSvcUp      > 0) $svcParts[] = "{$countSvcUp} up";
+        if ($countSvcDown    > 0) $svcParts[] = "{$countSvcDown} down";
+        if ($countSvcError   > 0) $svcParts[] = "{$countSvcError} error";
+        if ($countSvcSkipped > 0) $svcParts[] = "{$countSvcSkipped} skipped";
+        if (!empty($svcParts)) {
+            echo "Services: " . implode(', ', $svcParts) . ".\n";
+        }
+    }
 }
 
 exit(0);
