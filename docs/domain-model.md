@@ -1,0 +1,472 @@
+# NetMon Domain Model Roadmap
+
+> **Status:** Living planning document.
+> - **Phase 1 complete:** `merged_into_device_id` and `deleted_at` added to `devices` (migration 0010).
+> - All other phases are planned but not yet implemented.
+>
+> Related: [schema.md](schema.md) · [devices.md](devices.md) · [architecture.md](architecture.md)
+
+---
+
+## Design Goals
+
+1. **A device is a logical entity, not an IP address.** IPs are how you reach a device at a given moment — not its identity. The model must support devices with multiple interfaces and multiple addresses per interface.
+
+2. **No duplicate open alerts.** For a given (device, service, alert type), exactly one alert row may be `open` at a time. Subsequent failures update the existing alert rather than creating new rows.
+
+3. **Reminder notifications are modeled on the alert row, not as separate events.** A single `last_notified_at` timestamp on the alert record drives 15-minute repeat notifications. The monitoring runner checks this timestamp on every cycle.
+
+4. **Discovery is a proposal, not an assertion.** Subnet scan findings are staged as `discovery_findings` rows. They are matched (auto or manually) to existing devices. Unmatched findings queue for human review.
+
+5. **Merges are soft.** When two device records are discovered to represent the same physical host, one survives and the other is soft-deleted with `merged_into_device_id` pointing to the canonical record. All history is preserved.
+
+---
+
+## Current Implemented Schema (Phase 1 + 2)
+
+These tables exist in the database today.
+
+```
+migrations
+users ──< user_groups >── groups ──< group_permissions >── permissions
+users ──< api_tokens
+devices ──< device_interfaces ──< device_addresses
+```
+
+| Table | Status |
+|-------|--------|
+| `migrations` | Implemented |
+| `users` | Implemented |
+| `groups` | Implemented |
+| `permissions` | Implemented |
+| `user_groups` | Implemented |
+| `group_permissions` | Implemented |
+| `api_tokens` | Implemented |
+| `devices` | Implemented — includes Phase 1 soft-delete columns |
+| `device_interfaces` | Implemented — migration 0011 |
+| `device_addresses` | Implemented — migration 0012 |
+
+**Transitional dual-source state:** `devices.host` and `device_addresses` both contain the same host/IP during this transition period. All existing devices have been migrated (migration 0013). Application code still reads `devices.host` directly. Repositories will be updated to query via `device_interfaces` + `device_addresses` in a future step. See [Migration Path](#migration-path-v1-→-full-model).
+
+---
+
+## Target Domain Model (Full)
+
+### Entity-Relationship Overview
+
+```
+devices ──< device_interfaces ──< device_addresses
+   │
+   └──< monitored_services ──< service_checks
+   │
+   └──< alerts ──< notification_history
+   │
+   └── merged_into_device_id (self-reference, nullable)
+
+discovery_jobs ──< discovery_findings ──→ devices (merged_device_id, nullable)
+```
+
+---
+
+## Entity Definitions
+
+### `devices` (extended)
+
+The logical identity anchor for a network host. One row per managed device regardless of how many IPs or interfaces it has.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `name` | VARCHAR(128) | No | — | Human-readable label (e.g. "Core Router") |
+| `host` | VARCHAR(255) | No | — | **v1 transitional — deprecated.** Primary host/IP. Superseded by `device_addresses`. |
+| `status` | VARCHAR(32) | No | `unknown` | Cached aggregate status. Updated by monitoring runner after each cycle. Values: `online`, `offline`, `degraded`, `unknown` |
+| `last_check_at` | VARCHAR(32) | Yes | NULL | **v1 transitional — deprecated.** Superseded by `service_checks.checked_at`. |
+| `merged_into_device_id` | INTEGER FK | Yes | NULL | If non-null, this record has been merged into another device. Soft delete. |
+| `deleted_at` | VARCHAR(32) | Yes | NULL | Soft delete timestamp. Set when merged. NULL = active record. |
+| `created_at` | VARCHAR(32) | No | — | Record creation datetime |
+
+**Added by migration 0010.** ✓ Implemented.
+
+Status transitions driven by the monitoring runner:
+- `online` — all monitored services responding
+- `degraded` — at least one service failing, not all
+- `offline` — all services failing, or ICMP unreachable
+- `unknown` — no checks have run yet
+
+---
+
+### `device_interfaces`
+
+One row per network interface on a device. An interface groups addresses and carries physical-layer metadata.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `device_id` | INTEGER FK | No | — | → `devices.id` CASCADE DELETE |
+| `name` | VARCHAR(64) | No | — | Interface name (e.g. `eth0`, `WAN`, `Management`) |
+| `mac_address` | VARCHAR(17) | Yes | NULL | MAC address in `AA:BB:CC:DD:EE:FF` format. NULL if unknown. |
+| `is_management` | INTEGER | No | `0` | 1 = preferred interface for device-level checks (ICMP, SNMP) |
+| `description` | VARCHAR(255) | Yes | NULL | Optional notes |
+| `created_at` | VARCHAR(32) | No | — | Record creation datetime |
+
+**Migration 0011.** ✓ Implemented.
+
+---
+
+### `device_addresses`
+
+One row per IP address on an interface. Supports both IPv4 and IPv6.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `interface_id` | INTEGER FK | No | — | → `device_interfaces.id` CASCADE DELETE |
+| `address` | VARCHAR(45) | No | — | IP address (IPv4 or IPv6). VARCHAR(45) fits full IPv6 with CIDR. |
+| `family` | VARCHAR(4) | No | — | `ipv4` or `ipv6` |
+| `is_primary` | INTEGER | No | `0` | 1 = primary address for this interface; used for checks when no specific address is configured |
+| `created_at` | VARCHAR(32) | No | — | Record creation datetime |
+
+**Indexes:** `device_addresses_address (address)` — fast lookup during discovery matching.
+
+**Migration 0012.** ✓ Implemented.
+
+---
+
+### `monitored_services`
+
+Defines what to check on a device. Not the results — only the configuration of each check.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `device_id` | INTEGER FK | No | — | → `devices.id` CASCADE DELETE |
+| `name` | VARCHAR(128) | No | — | Human label (e.g. "Ping", "HTTPS", "SSH") |
+| `protocol` | VARCHAR(16) | No | — | `icmp`, `tcp`, `udp`, `http`, `https` |
+| `port` | INTEGER | Yes | NULL | NULL for ICMP; required for TCP/UDP/HTTP checks |
+| `check_address_id` | INTEGER FK | Yes | NULL | → `device_addresses.id` SET NULL. NULL = use device's primary management address |
+| `check_interval_seconds` | INTEGER | No | `60` | How often to run this check |
+| `is_active` | INTEGER | No | `1` | 0 = paused |
+| `created_at` | VARCHAR(32) | No | — | Record creation datetime |
+
+**Migration 0013.**
+
+---
+
+### `service_checks`
+
+Append-only log of each individual check result. Drives status updates and alert evaluation.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `service_id` | INTEGER FK | No | — | → `monitored_services.id` CASCADE DELETE |
+| `status` | VARCHAR(16) | No | — | `ok`, `fail`, `timeout` |
+| `response_ms` | INTEGER | Yes | NULL | Round-trip time in milliseconds. NULL if unreachable. |
+| `detail` | VARCHAR(255) | Yes | NULL | Optional detail (e.g. "Connection refused", "HTTP 503") |
+| `checked_at` | VARCHAR(32) | No | — | When this check ran |
+
+**Indexes:**
+- `service_checks_service_id (service_id)` — fetch history per service
+- `service_checks_checked_at (checked_at)` — time-range queries
+
+**Note on volume:** This table grows with every monitoring cycle. A retention policy (e.g. keep last 1,000 rows per service, or purge rows older than 30 days) should be implemented once the monitoring runner exists. The table design supports either approach without schema changes.
+
+**Migration 0014.**
+
+---
+
+### `alerts`
+
+Stateful alert records. The core rule: **at most one open alert per (device_id, service_id, alert_type) tuple.** The monitoring runner enforces this before inserting.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `device_id` | INTEGER FK | No | — | → `devices.id` CASCADE DELETE |
+| `service_id` | INTEGER FK | Yes | NULL | → `monitored_services.id` SET NULL. NULL = device-level alert (e.g. device unreachable) |
+| `alert_type` | VARCHAR(64) | No | — | Short machine-readable label: `service_down`, `device_unreachable`, `high_latency` |
+| `severity` | VARCHAR(16) | No | `critical` | `critical`, `warning`, `info` |
+| `status` | VARCHAR(16) | No | `open` | `open` or `resolved` |
+| `message` | TEXT | No | — | Human-readable description generated at alert creation |
+| `occurrence_count` | INTEGER | No | `1` | Incremented each time the condition is re-confirmed while still open |
+| `opened_at` | VARCHAR(32) | No | — | When the alert was first triggered |
+| `last_seen_at` | VARCHAR(32) | No | — | When the failing condition was last observed (updated on re-confirmation) |
+| `last_notified_at` | VARCHAR(32) | Yes | NULL | When the last notification was sent for this alert. Drives 15-min reminder throttle. |
+| `resolved_at` | VARCHAR(32) | Yes | NULL | When the condition cleared. NULL = still open. |
+
+**Indexes:**
+- `alerts_open (device_id, service_id, alert_type, status)` — fast deduplication lookup
+- `alerts_status (status)` — list all open alerts
+
+**Migration 0015.**
+
+---
+
+### `notification_history`
+
+Immutable log of every notification dispatched. One row per send attempt per alert.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `alert_id` | INTEGER FK | No | — | → `alerts.id` CASCADE DELETE |
+| `channel` | VARCHAR(32) | No | — | `email`, `webhook`, `slack`, etc. |
+| `recipient` | VARCHAR(255) | No | — | Email address, webhook URL, or channel identifier |
+| `notification_type` | VARCHAR(32) | No | — | `open` (first trigger), `reminder`, `resolved` |
+| `success` | INTEGER | No | — | 1 = sent successfully, 0 = failed |
+| `detail` | VARCHAR(255) | Yes | NULL | Error message on failure, or response code on success |
+| `sent_at` | VARCHAR(32) | No | — | When the send was attempted |
+
+**Migration 0016.**
+
+---
+
+### `discovery_jobs`
+
+One row per subnet scan operation. Tracks job lifecycle.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `subnet` | VARCHAR(45) | No | — | CIDR notation, e.g. `192.168.1.0/24` |
+| `status` | VARCHAR(16) | No | `pending` | `pending`, `running`, `done`, `failed` |
+| `created_by` | INTEGER FK | Yes | NULL | → `users.id` SET NULL. The user who initiated the scan. |
+| `started_at` | VARCHAR(32) | Yes | NULL | When the scan process started |
+| `finished_at` | VARCHAR(32) | Yes | NULL | When the scan completed or failed |
+| `result_summary` | TEXT | Yes | NULL | Human-readable summary: found N hosts, N new, N matched |
+| `created_at` | VARCHAR(32) | No | — | When the job was queued |
+
+**Migration 0017.**
+
+---
+
+### `discovery_findings`
+
+One row per IP address found during a discovery scan. Staged for matching or review.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `job_id` | INTEGER FK | No | — | → `discovery_jobs.id` CASCADE DELETE |
+| `address` | VARCHAR(45) | No | — | IP address of the discovered host |
+| `hostname` | VARCHAR(255) | Yes | NULL | Reverse DNS result. NULL if rDNS fails. |
+| `is_alive` | INTEGER | No | — | 1 = responded to ICMP ping during scan |
+| `responded_at` | VARCHAR(32) | Yes | NULL | When the host responded. NULL if not alive. |
+| `merged_device_id` | INTEGER FK | Yes | NULL | → `devices.id` SET NULL. Set when this finding is associated with an existing device (auto or manual). |
+| `merge_status` | VARCHAR(16) | No | `pending` | `pending` (awaiting review), `auto_matched`, `manually_matched`, `ignored` |
+| `created_at` | VARCHAR(32) | No | — | When this finding was recorded |
+
+**Indexes:**
+- `discovery_findings_address (address)` — cross-reference with `device_addresses.address`
+- `discovery_findings_merge_status (merge_status)` — list unreviewed findings
+
+**Migration 0018.**
+
+---
+
+## Alert Deduplication Design
+
+The monitoring runner follows this logic on every check cycle for each service:
+
+```
+run_check(service) → result {ok, fail, timeout}
+
+if result == ok:
+    open_alert = find_open_alert(device_id, service_id, 'service_down')
+    if open_alert:
+        resolve(open_alert)          # set status='resolved', resolved_at=now
+        send_notification(open_alert, type='resolved')
+    update device.status (recalculate from all services)
+
+if result == fail or timeout:
+    open_alert = find_open_alert(device_id, service_id, 'service_down')
+    if open_alert:
+        # Alert already exists — do NOT insert a new one
+        increment open_alert.occurrence_count
+        update open_alert.last_seen_at = now
+        check_reminder(open_alert)   # see below
+    else:
+        insert new alert(status='open', opened_at=now, last_seen_at=now, last_notified_at=now)
+        send_notification(new_alert, type='open')
+    update device.status
+```
+
+**`find_open_alert` query:**
+```sql
+SELECT * FROM alerts
+WHERE device_id = ?
+  AND service_id = ?
+  AND alert_type = ?
+  AND status = 'open'
+LIMIT 1
+```
+
+Because `status` can only be `open` once per (device, service, type) — enforced by application logic, not a DB constraint — this query always returns 0 or 1 rows.
+
+> A unique partial index on `(device_id, service_id, alert_type)` WHERE `status = 'open'` would enforce this at the DB level. SQLite supports partial indexes; MySQL does not (before 8.0). For now, application logic enforces it and the composite index makes the lookup fast.
+
+---
+
+## Notification Reminder Design (15-minute throttle)
+
+The reminder check runs after confirming a check is still failing and an open alert already exists:
+
+```
+check_reminder(open_alert):
+    if open_alert.last_notified_at IS NULL:
+        send_notification(open_alert, type='reminder')
+        update open_alert.last_notified_at = now
+    else:
+        seconds_since = now - open_alert.last_notified_at
+        if seconds_since >= 900:   # 900 = 15 × 60
+            send_notification(open_alert, type='reminder')
+            update open_alert.last_notified_at = now
+```
+
+`last_notified_at` is stored on the alert row so:
+- No extra table is required to track throttle state.
+- The monitoring runner is stateless — it reads `last_notified_at` from the DB on every cycle.
+- If the monitoring runner restarts, throttle state is preserved.
+
+The 15-minute interval is a constant in the monitoring runner. In a future version it could become a per-device or per-service configurable value without schema changes (just add a column to `monitored_services`).
+
+---
+
+## Discovery and Device Identity / Merge Strategy
+
+### The identity problem
+
+A device may be discovered under multiple IPs (e.g. a router with two interfaces). No automated system can reliably decide these are the same physical box without human confirmation. The design stages decisions rather than asserting them.
+
+### Auto-match
+
+When a discovery scan finds an IP:
+
+```
+address = '192.168.1.1'
+match = SELECT da.id, di.device_id
+        FROM device_addresses da
+        JOIN device_interfaces di ON da.interface_id = di.id
+        WHERE da.address = ?
+        LIMIT 1
+```
+
+- **Match found:** Set `findings.merged_device_id = match.device_id`, `merge_status = 'auto_matched'`. No new device created.
+- **No match:** Leave `merged_device_id = NULL`, `merge_status = 'pending'`. Finding appears in the "Pending Review" list in the UI.
+
+### Pending review
+
+The UI will show a list of `discovery_findings WHERE merge_status = 'pending'`. For each, the admin can:
+- **Create new device** from this finding
+- **Attach to existing device** — sets `merged_device_id`, creates an interface+address entry
+- **Ignore** — sets `merge_status = 'ignored'`
+
+### Manual device merge
+
+When an admin determines that two existing `devices` rows represent the same physical host:
+
+1. Pick the **canonical** device (the one to keep).
+2. Transfer all interfaces (`device_interfaces`) from the duplicate to the canonical device.
+3. Transfer all `monitored_services`, open `alerts`, and `discovery_findings` references.
+4. Set on the duplicate row: `merged_into_device_id = canonical.id`, `deleted_at = now`.
+5. Log the merge action in `notification_history` or a dedicated audit log (future).
+
+Merged devices are excluded from all normal queries by adding `WHERE deleted_at IS NULL` to device queries. Their historical `service_checks`, `alerts`, and `notification_history` rows remain intact and are accessible via the canonical device.
+
+**Note:** The `merged_into_device_id` self-reference is intentionally shallow (one level). Chains (A → B → C) are prevented by the UI: you can only merge into an active (non-merged) device.
+
+---
+
+## Migration Path: v1 → Full Model
+
+The v1 `devices` table stays in place throughout. The expansion happens in additive steps.
+
+### Step 1 — Extend `devices` (migration 0010) ✓
+
+Add `merged_into_device_id` and `deleted_at` to `devices`. Safe `ALTER TABLE ADD COLUMN`. No data migration.
+
+### Step 2 — Add interfaces and addresses (migrations 0011–0012) ✓
+
+Create `device_interfaces` and `device_addresses`. No changes to `devices`.
+
+### Step 3 — Migrate v1 host data (migration 0013) ✓
+
+Data migration only — no DDL. For each active device with a non-empty `host`:
+- Insert one `device_interfaces` row (`name = 'Primary'`, `is_management = 1`)
+- Insert one `device_addresses` row (`address = devices.host`, `family` auto-detected, `is_primary = 1`)
+
+`devices.host` is left in place. Both sources are valid during the transition. All existing devices now have interface/address records. See *Transitional State* note above.
+
+### Step 4 — Refactor repository to query via device_addresses (no migration) ✓
+
+`DeviceRepository::findAll()` now resolves `address` via a correlated subquery against `device_interfaces` (is_management=1) + `device_addresses` (is_primary=1), falling back to `devices.host`. Active-device filter added (`WHERE deleted_at IS NULL`). The view reads `$device['address']`.
+
+### Step 5 — Add monitored_services (migration 0014)
+
+Fully additive. Defines what to check per device.
+
+### Step 6 — Add service_checks (migration 0015)
+
+Fully additive. Stores check results; drives `devices.status` updates.
+
+### Step 7 — Add alerts and notification_history (migrations 0016–0017)
+
+Fully additive.
+
+### Step 8 — Add discovery tables (migrations 0018–0019)
+
+Fully additive.
+
+### Step 9 — Drop deprecated `devices.host` and `devices.last_check_at`
+
+Once all code reads from `device_addresses` / `service_checks`, drop the deprecated columns via table rebuild. Deferred until the monitoring runner is complete and all consumers are migrated.
+
+---
+
+## Recommended Implementation Order
+
+These are ordered by value delivered and dependency chain.
+
+| Phase | Work | Migrations | Unlocks |
+|-------|------|------------|---------|
+| **1** ✓ | Extend `devices` with `merged_into_device_id` + `deleted_at` | 0010 | Soft delete, merge readiness |
+| **2** ✓ | `device_interfaces` + `device_addresses` + data migration of `host` | 0011–0013 | Multi-IP support, discovery matching |
+| **3** ✓ | Refactor `DeviceRepository` to query via `device_addresses` | — (code only) | UI sees real interface/address data |
+| **4** | `monitored_services` CRUD | 0014 | Services are configurable |
+| **5** | `service_checks` + monitoring runner (CLI) | 0015 | Real check results, status updates |
+| **6** | `alerts` + deduplication logic in monitoring runner | 0016 | Stateful alerting, no duplicate rows |
+| **7** | `notification_history` + email/webhook dispatch | 0017 | Notifications sent and logged |
+| **8** | `discovery_jobs` + `discovery_findings` + scan runner | 0018–0019 | Subnet discovery, pending review UI |
+| **9** | Drop deprecated `devices.host` + `devices.last_check_at` | — | Schema cleanup |
+
+**Phase 3 (repository refactor) must come before Phase 5 (monitoring runner).** The runner needs to know which address to check. If `DeviceRepository` still reads `devices.host` instead of `device_addresses`, the runner cannot use the new multi-IP model.
+
+---
+
+## Full Schema Summary (Target State)
+
+```
+devices
+  ├─< device_interfaces
+  │     └─< device_addresses
+  ├─< monitored_services
+  │     └─< service_checks
+  ├─< alerts
+  │     └─< notification_history
+  └── merged_into_device_id (→ devices, self-ref)
+
+discovery_jobs
+  └─< discovery_findings ──→ devices (optional)
+```
+
+| Table | Rows grow | Retention concern |
+|-------|-----------|-------------------|
+| `devices` | Slow (human-managed) | No |
+| `device_interfaces` | Slow | No |
+| `device_addresses` | Slow | No |
+| `monitored_services` | Slow (human-managed) | No |
+| `service_checks` | **Fast** (every check cycle) | Yes — purge or cap per service |
+| `alerts` | Medium (opens and resolves) | No |
+| `notification_history` | Medium | Archivable after N days |
+| `discovery_jobs` | Slow (user-initiated) | No |
+| `discovery_findings` | Medium (per subnet size) | Archivable after merge |

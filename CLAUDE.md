@@ -89,8 +89,8 @@ Stack:
 - OAuth authentication (Google, Microsoft, Facebook, Apple, and other providers)
 - Multi-database support switch
 - External integrations
-- CLI installation script
-- Web-based installation wizard
+- CLI installation script (implemented)
+- Web-based installation wizard (implemented)
 
 ---
 
@@ -118,6 +118,142 @@ When working:
 - Do NOT leave major new architecture or workflows undocumented when /docs should be updated
 - Do NOT create or modify major subsystems without updating the relevant preferred documentation files when applicable
 - Do NOT treat files under /docs/reference as production-ready code without adaptation
+
+---
+
+## NetMon Domain Model Guidelines
+
+NetMon is not a simple CRUD app — it models network infrastructure and monitoring state.
+
+All future implementations MUST respect the following domain rules.
+
+### Core Concepts
+
+- A **Device** represents a logical host/system (not an IP)
+- A device may have:
+  - multiple network interfaces
+  - multiple IP addresses
+  - multiple monitored services (ports)
+
+### Device Structure
+
+Design must evolve toward:
+
+- Device
+- DeviceInterface (NICs)
+- DeviceAddress (IPs)
+- DeviceService (ports/services)
+
+Avoid flattening everything into a single devices table long-term.
+
+---
+
+### Monitoring Model
+
+Monitoring exists at two levels:
+
+1. Device-level (reachability)
+2. Service-level (ports/services)
+
+Device status should be derived from checks:
+- online
+- offline
+- degraded
+- unknown
+- disabled
+
+Do NOT treat status as static-only data.
+
+---
+
+### Alerts (CRITICAL RULES)
+
+Alerts must be **stateful**:
+
+- Do NOT create duplicate alerts for the same issue
+- Use a deterministic fingerprint (e.g. device/service + type)
+- Reuse existing open alerts:
+  - update last_seen_at
+  - increment occurrence_count
+
+Alert lifecycle:
+- open
+- acknowledged
+- resolved
+- suppressed
+
+---
+
+### Notifications
+
+Notifications must:
+- be based on alerts (NOT raw monitoring events)
+- support throttling (e.g. every 15 minutes)
+- support repeated reminders
+- support escalation behavior
+
+Avoid sending duplicate notifications for the same alert too frequently.
+
+---
+
+### Discovery
+
+Discovery is separate from devices:
+
+- DiscoveryJob (scan configuration)
+- DiscoveryFinding (observed IP/MAC/hostname)
+
+Findings must NOT blindly create devices.
+
+---
+
+### Device Identity & Merge
+
+Devices may be discovered under multiple IPs.
+
+Merging must:
+- prefer strong identifiers (MAC address first)
+- avoid unsafe auto-merging
+- allow future manual merge workflows
+
+Do NOT assume:
+- one IP = one device
+
+---
+
+### Architecture Expectations
+
+When implementing new features:
+
+- Respect the domain separation:
+  - device
+  - interface
+  - address
+  - service
+  - alert
+  - notification
+  - discovery
+
+- Avoid premature simplification that would block:
+  - multi-interface devices
+  - service-level monitoring
+  - alert deduplication
+  - discovery merging
+
+---
+
+### Implementation Strategy
+
+When adding new features:
+
+- Prefer incremental evolution of schema
+- Document domain decisions in /docs
+- Do NOT fully implement complex subsystems without planning first
+- Separate:
+  - planning (docs)
+  - schema
+  - services
+  - UI
 
 ---
 
