@@ -2,7 +2,8 @@
 
 /** @var \App\Core\Router $router */
 
-$router->get('/', 'NetMon\Controllers\HomeController@index');
+$router->get('/',        'NetMon\Controllers\HomeController@index',   ['WebAuth']);
+$router->get('/devices', 'NetMon\Controllers\DeviceController@index', ['WebAuth']);
 
 // Authentication (public — no middleware)
 $router->post('/auth/login',  'AuthController@login');

@@ -164,6 +164,30 @@ Device status should be derived from checks:
 
 Do NOT treat status as static-only data.
 
+
+### Monitoring History (Time-Series Data)
+
+Monitoring results MUST be stored historically, not only as the latest state.
+
+Requirements:
+- Device-level checks must be stored (e.g., device_checks)
+- Service-level checks must be stored (e.g., service_checks)
+- Each check should include:
+  - timestamp (checked_at)
+  - status
+  - latency (if applicable)
+  - optional message/error
+
+Design rules:
+- Current status fields (devices.status, etc.) are summaries only
+- Historical tables are the source of truth for:
+  - graphs
+  - uptime calculations
+  - alert correlation
+  - trend analysis
+
+Do NOT design monitoring as "last state only".
+
 ---
 
 ### Alerts (CRITICAL RULES)
@@ -240,6 +264,16 @@ When implementing new features:
   - alert deduplication
   - discovery merging
 
+- All read queries for devices MUST exclude soft-deleted rows by default:
+  - Use WHERE deleted_at IS NULL unless explicitly querying historical/merged records
+
+- Transitional columns (e.g., devices.host) must be retired gradually:
+  - Phase 1: schema + data migration
+  - Phase 2: repository read path switch
+  - Phase 3: write path switch
+  - Phase 4: UI alignment
+  - Phase 5: column removal (final cleanup)
+
 ---
 
 ### Implementation Strategy
@@ -291,3 +325,5 @@ When adding new features:
 - The uninstall/reset flow should remove only local install artifacts and preserve baseline project files
 - After a successful reset, /setup should be reachable again
 - Installer and uninstall flows should respect the configured APP_URL, which may be a custom local development host such as https://netmon.local
+- Monitoring system must support historical data storage for graphing and reporting (time-series checks)
+- Device-level and service-level checks should be modeled separately to allow flexible monitoring strategies
