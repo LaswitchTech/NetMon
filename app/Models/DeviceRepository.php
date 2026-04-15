@@ -198,6 +198,171 @@ class DeviceRepository
         return array_values($interfaces);
     }
 
+    /**
+     * Return other active devices that share a strong identity signal with the
+     * given device — MAC address (strong) or hostname via linked discovery
+     * findings (weaker).
+     *
+     * Results are informational only. No merge or link action is taken.
+     * Each row includes a `match_reason` ('mac' or 'hostname') and `match_value`
+     * (the shared MAC or hostname string) so the UI can label the signal clearly.
+     *
+     * Priority: MAC matches are always included first; hostname-only matches
+     * are appended for devices not already present via a MAC match.
+     *
+     * The device itself is never included in its own results.
+     * Soft-deleted devices are excluded.
+     *
+     * @param  int $deviceId
+     * @return array<int, array{
+     *   id:           int,
+     *   name:         string,
+     *   address:      string,
+     *   match_reason: string,
+     *   match_value:  string
+     * }>
+     */
+    public function possibleDuplicates(int $deviceId): array
+    {
+        $suggestions = [];
+
+        // ── Strong signal: shared MAC address ─────────────────────────────────
+        // Find other active devices that have any interface whose MAC appears
+        // on any interface of $deviceId.
+        $macMatches = $this->db->fetch(
+            "SELECT DISTINCT
+                 d.id,
+                 d.name,
+                 COALESCE(
+                     (
+                         SELECT  da2.address
+                         FROM    device_interfaces di2
+                         JOIN    device_addresses  da2 ON da2.interface_id = di2.id
+                         WHERE   di2.device_id    = d.id
+                           AND   di2.is_management = 1
+                           AND   da2.is_primary    = 1
+                         LIMIT 1
+                     ),
+                     d.host
+                 ) AS address,
+                 di.mac_address AS match_value,
+                 'mac'          AS match_reason
+             FROM   devices d
+             JOIN   device_interfaces di ON di.device_id = d.id
+             WHERE  d.id         != ?
+               AND  d.deleted_at IS NULL
+               AND  di.mac_address IS NOT NULL
+               AND  di.mac_address != ''
+               AND  di.mac_address IN (
+                        SELECT mac_address
+                        FROM   device_interfaces
+                        WHERE  device_id    = ?
+                          AND  mac_address IS NOT NULL
+                          AND  mac_address != ''
+                   )
+             ORDER  BY d.name ASC",
+            [$deviceId, $deviceId]
+        );
+
+        foreach ($macMatches as $row) {
+            $suggestions[(int) $row['id']] = $row;
+        }
+
+        // ── Weaker signal: shared hostname via linked discovery findings ────────
+        // Find other active devices linked to a discovery finding whose hostname
+        // matches any hostname on a finding linked to $deviceId.
+        $hostnameMatches = $this->db->fetch(
+            "SELECT DISTINCT
+                 d.id,
+                 d.name,
+                 COALESCE(
+                     (
+                         SELECT  da2.address
+                         FROM    device_interfaces di2
+                         JOIN    device_addresses  da2 ON da2.interface_id = di2.id
+                         WHERE   di2.device_id    = d.id
+                           AND   di2.is_management = 1
+                           AND   da2.is_primary    = 1
+                         LIMIT 1
+                     ),
+                     d.host
+                 ) AS address,
+                 f.hostname AS match_value,
+                 'hostname'  AS match_reason
+             FROM   devices d
+             JOIN   discovery_findings f ON f.matched_device_id = d.id
+             WHERE  d.id         != ?
+               AND  d.deleted_at IS NULL
+               AND  f.hostname IS NOT NULL
+               AND  f.hostname != ''
+               AND  f.hostname IN (
+                        SELECT hostname
+                        FROM   discovery_findings
+                        WHERE  matched_device_id = ?
+                          AND  hostname IS NOT NULL
+                          AND  hostname != ''
+                   )
+             ORDER  BY d.name ASC",
+            [$deviceId, $deviceId]
+        );
+
+        foreach ($hostnameMatches as $row) {
+            // Only add hostname matches for devices not already found via MAC.
+            if (!isset($suggestions[(int) $row['id']])) {
+                $suggestions[(int) $row['id']] = $row;
+            }
+        }
+
+        return array_values($suggestions);
+    }
+
+    /**
+     * Return a lightweight id/name list of all active devices, ordered by name.
+     *
+     * Used to populate target-device dropdowns (e.g. the merge form).
+     * Excludes soft-deleted devices.
+     *
+     * @return array<int, array{id: int, name: string}>
+     */
+    public function findAllForSelect(): array
+    {
+        return $this->db->fetch(
+            "SELECT id, name FROM devices WHERE deleted_at IS NULL ORDER BY name ASC"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Counts (dashboard)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the total number of active (non-deleted) devices.
+     *
+     * @return int
+     */
+    public function countAll(): int
+    {
+        $row = $this->db->fetchOne(
+            "SELECT COUNT(*) AS cnt FROM devices WHERE deleted_at IS NULL"
+        );
+        return (int) ($row['cnt'] ?? 0);
+    }
+
+    /**
+     * Return the number of active devices with a given status.
+     *
+     * @param  string $status  e.g. 'online', 'offline', 'unknown', 'disabled'
+     * @return int
+     */
+    public function countByStatus(string $status): int
+    {
+        $row = $this->db->fetchOne(
+            "SELECT COUNT(*) AS cnt FROM devices WHERE deleted_at IS NULL AND status = ?",
+            [$status]
+        );
+        return (int) ($row['cnt'] ?? 0);
+    }
+
     // -------------------------------------------------------------------------
     // Write
     // -------------------------------------------------------------------------
@@ -339,6 +504,78 @@ class DeviceRepository
         $this->db->execute(
             "UPDATE devices SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
             [date('Y-m-d H:i:s'), $id]
+        );
+    }
+
+    /**
+     * Merge sourceId into targetId (operator-driven; never called automatically).
+     *
+     * Steps:
+     *   1. Validate — source and target must be distinct, active, non-deleted devices.
+     *   2. Transfer device_interfaces — UPDATE device_interfaces SET device_id = target WHERE device_id = source.
+     *      device_addresses follow automatically because they are linked via interface_id.
+     *   3. Transfer monitored_services — UPDATE monitored_services SET device_id = target WHERE device_id = source.
+     *   4. Transfer alerts — UPDATE alerts SET device_id = target WHERE device_id = source.
+     *   5. Retarget discovery findings — UPDATE discovery_findings SET matched_device_id = target WHERE matched_device_id = source.
+     *   6. Soft-delete source — SET merged_into_device_id = target, deleted_at = now.
+     *
+     * No rows are deleted. All historical check data (device_checks, service_checks)
+     * remains intact — it stays associated with the transferred interfaces and
+     * services, which now belong to the target device.
+     *
+     * @throws \InvalidArgumentException  if source equals target, or either device
+     *                                    is not found / already soft-deleted.
+     */
+    public function mergeInto(int $sourceId, int $targetId): void
+    {
+        if ($sourceId === $targetId) {
+            throw new \InvalidArgumentException('Cannot merge a device into itself.');
+        }
+
+        $source = $this->findById($sourceId);
+        if ($source === null) {
+            throw new \InvalidArgumentException('Source device not found or already deleted.');
+        }
+
+        $target = $this->findById($targetId);
+        if ($target === null) {
+            throw new \InvalidArgumentException('Target device not found or already deleted.');
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        // 1. Transfer interfaces (addresses follow via interface_id FK).
+        $this->db->execute(
+            "UPDATE device_interfaces SET device_id = ? WHERE device_id = ?",
+            [$targetId, $sourceId]
+        );
+
+        // 2. Transfer monitored services.
+        $this->db->execute(
+            "UPDATE monitored_services SET device_id = ? WHERE device_id = ?",
+            [$targetId, $sourceId]
+        );
+
+        // 3. Transfer alerts.
+        $this->db->execute(
+            "UPDATE alerts SET device_id = ? WHERE device_id = ?",
+            [$targetId, $sourceId]
+        );
+
+        // 4. Retarget discovery findings that pointed at the source device.
+        $this->db->execute(
+            "UPDATE discovery_findings SET matched_device_id = ? WHERE matched_device_id = ?",
+            [$targetId, $sourceId]
+        );
+
+        // 5. Soft-delete source with merge marker.
+        $this->db->execute(
+            "UPDATE devices
+             SET    merged_into_device_id = ?,
+                    deleted_at            = ?
+             WHERE  id = ?
+               AND  deleted_at IS NULL",
+            [$targetId, $now, $sourceId]
         );
     }
 

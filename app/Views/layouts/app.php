@@ -124,6 +124,10 @@ if (!isset($displayName) || $displayName === '') {
                 <i class="bi bi-bell"></i>
                 Alerts
             </a>
+            <a class="nav-link <?= $navActive === 'Discovery' ? 'active' : '' ?>" href="/discovery">
+                <i class="bi bi-radar"></i>
+                Discovery
+            </a>
 
         </nav>
     </aside>

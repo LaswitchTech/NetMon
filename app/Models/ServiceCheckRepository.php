@@ -185,6 +185,55 @@ class ServiceCheckRepository
     }
 
     // -------------------------------------------------------------------------
+    // Counts (dashboard)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the number of monitored services whose last known state is 'down'.
+     *
+     * Excludes services on soft-deleted devices. Uses the summary column
+     * monitored_services.last_state so no join to service_checks is needed.
+     *
+     * @return int
+     */
+    public function countServicesDown(): int
+    {
+        $row = $this->db->fetchOne(
+            "SELECT COUNT(*) AS cnt
+             FROM   monitored_services ms
+             JOIN   devices d ON d.id = ms.device_id
+             WHERE  ms.monitoring_enabled = 1
+               AND  ms.last_state        = 'down'
+               AND  d.deleted_at         IS NULL"
+        );
+        return (int) ($row['cnt'] ?? 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Retention cleanup
+    // -------------------------------------------------------------------------
+
+    /**
+     * Delete service_checks rows older than $cutoff.
+     *
+     * Uses the indexed `checked_at` column for efficient range deletion.
+     * Only rows strictly before the cutoff are removed — rows at exactly
+     * the cutoff timestamp are preserved.
+     *
+     * monitored_services.last_state and last_check_at are NOT affected.
+     *
+     * @param  \DateTime $cutoff  Delete rows with checked_at before this instant
+     * @return int                Number of rows deleted
+     */
+    public function deleteOlderThan(\DateTime $cutoff): int
+    {
+        return $this->db->execute(
+            "DELETE FROM service_checks WHERE checked_at < ?",
+            [$cutoff->format('Y-m-d H:i:s')]
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Current state update
     // -------------------------------------------------------------------------
 

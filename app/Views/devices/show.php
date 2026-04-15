@@ -19,11 +19,19 @@
  *   $serviceHistories (array)  — keyed by service id; each value is an array of rows from
  *                               ServiceCheckRepository::findHistoryByService() (ASC order);
  *                               each row: checked_at, status, latency_ms
+ *   $possibleDuplicates (array) — from DeviceRepository::possibleDuplicates();
+ *                                 each entry: id, name, address, match_reason, match_value
+ *                                 empty array if no suggestions
  *   $user         (array)
  *   $permissions  (array)
  *   $appName      (string)
  *   $displayName  (string)
  */
+
+// Detect a post-merge redirect — ?merged=SourceName
+$mergedFrom = isset($_GET['merged']) && $_GET['merged'] !== ''
+    ? trim($_GET['merged'])
+    : null;
 
 $statusBadge = match ($device['status']) {
     'online'   => ['class' => 'bg-success', 'icon' => 'bi-check-circle-fill'],
@@ -34,6 +42,18 @@ $statusBadge = match ($device['status']) {
 
 $checkCount = count($recentChecks);
 ?>
+
+<?php if ($mergedFrom !== null): ?>
+<!-- Merge success banner -->
+<div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
+    <i class="bi bi-check-circle-fill flex-shrink-0"></i>
+    <div>
+        Device <strong><?= htmlspecialchars($mergedFrom) ?></strong> was merged into this device.
+        All interfaces, services, and alerts have been transferred.
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+<?php endif; ?>
 
 <!-- Breadcrumb -->
 <nav aria-label="breadcrumb" class="mb-3">
@@ -59,6 +79,10 @@ $checkCount = count($recentChecks);
         <a href="/devices/<?= (int) $device['id'] ?>/edit"
            class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-pencil me-1"></i>Edit
+        </a>
+        <a href="/devices/<?= (int) $device['id'] ?>/merge"
+           class="btn btn-sm btn-outline-warning">
+            <i class="bi bi-arrow-left-right me-1"></i>Merge
         </a>
     </div>
 </div>
@@ -119,6 +143,80 @@ $checkCount = count($recentChecks);
     </div>
 
 </div>
+
+<?php if (!empty($possibleDuplicates)): ?>
+<!-- Possible Duplicates -->
+<div class="card border-0 shadow-sm mb-3 border-warning" style="border-left: 3px solid #ffc107 !important">
+    <div class="card-body">
+        <div class="d-flex align-items-start gap-2 mb-3">
+            <i class="bi bi-exclamation-triangle text-warning mt-1 flex-shrink-0"></i>
+            <div>
+                <h6 class="fw-semibold mb-0">Possible Duplicate Devices</h6>
+                <p class="text-muted small mb-0">
+                    The following devices share a strong identity signal with this one.
+                    These are <strong>suggestions only</strong> — no action is taken automatically.
+                    Review each carefully before deciding to merge.
+                </p>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:30%">Device</th>
+                        <th style="width:22%">Address</th>
+                        <th style="width:22%">Signal</th>
+                        <th style="width:26%">Matched Value</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+<?php foreach ($possibleDuplicates as $dup): ?>
+<?php
+    $isMac = $dup['match_reason'] === 'mac';
+    $signalBadge = $isMac
+        ? '<span class="badge bg-warning text-dark" style="font-size:.68rem">MAC match</span>'
+        : '<span class="badge bg-secondary" style="font-size:.68rem">Hostname match</span>';
+    $signalNote = $isMac
+        ? ''
+        : '<span class="text-muted d-block small fst-italic">weaker signal</span>';
+?>
+                    <tr>
+                        <td class="fw-medium">
+                            <a href="/devices/<?= (int) $dup['id'] ?>" class="text-decoration-none">
+                                <?= htmlspecialchars($dup['name']) ?>
+                            </a>
+                        </td>
+                        <td class="font-monospace small text-muted">
+                            <?= htmlspecialchars($dup['address'] ?? '—') ?>
+                        </td>
+                        <td>
+                            <?= $signalBadge ?>
+                            <?= $signalNote ?>
+                        </td>
+                        <td class="font-monospace small">
+                            <?= htmlspecialchars($dup['match_value']) ?>
+                        </td>
+                        <td class="text-end">
+                            <a href="/devices/<?= (int) $device['id'] ?>/merge"
+                               class="btn btn-sm btn-outline-warning">
+                                <i class="bi bi-arrow-left-right me-1"></i>Merge
+                            </a>
+                        </td>
+                    </tr>
+<?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <p class="text-muted small mt-2 mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            The Merge button opens the merge form — you choose the direction and confirm.
+            Nothing is merged automatically.
+        </p>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Interfaces & Addresses -->
 <div class="card border-0 shadow-sm mb-3">

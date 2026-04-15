@@ -175,6 +175,62 @@ class DeviceCheckRepository
     }
 
     // -------------------------------------------------------------------------
+    // Dashboard read
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the most recent check rows across all devices, newest first.
+     *
+     * JOINs devices so each row carries the device name. Used by the dashboard
+     * to show a global feed of recent monitoring activity.
+     *
+     * @param  int $limit  Maximum rows to return (default 10)
+     * @return array<int, array{
+     *   device_id:   int,
+     *   device_name: string,
+     *   checked_at:  string,
+     *   status:      string,
+     *   latency_ms:  int|null
+     * }>
+     */
+    public function findRecentChecks(int $limit = 10): array
+    {
+        return $this->db->fetch(
+            "SELECT dc.device_id, d.name AS device_name,
+                    dc.checked_at, dc.status, dc.latency_ms
+             FROM   device_checks dc
+             JOIN   devices d ON d.id = dc.device_id
+             ORDER  BY dc.checked_at DESC, dc.id DESC
+             LIMIT  ?",
+            [$limit]
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Retention cleanup
+    // -------------------------------------------------------------------------
+
+    /**
+     * Delete device_checks rows older than $cutoff.
+     *
+     * Uses the indexed `checked_at` column for efficient range deletion.
+     * Only rows strictly before the cutoff are removed — rows at exactly
+     * the cutoff timestamp are preserved.
+     *
+     * devices.status and devices.last_check_at are NOT affected.
+     *
+     * @param  \DateTime $cutoff  Delete rows with checked_at before this instant
+     * @return int                Number of rows deleted
+     */
+    public function deleteOlderThan(\DateTime $cutoff): int
+    {
+        return $this->db->execute(
+            "DELETE FROM device_checks WHERE checked_at < ?",
+            [$cutoff->format('Y-m-d H:i:s')]
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Current status update
     // -------------------------------------------------------------------------
 

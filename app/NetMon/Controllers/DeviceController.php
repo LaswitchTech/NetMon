@@ -62,7 +62,8 @@ class DeviceController extends Controller
             return;
         }
 
-        $interfaces = $deviceRepo->findInterfacesWithAddresses($id);
+        $interfaces         = $deviceRepo->findInterfacesWithAddresses($id);
+        $possibleDuplicates = $deviceRepo->possibleDuplicates($id);
 
         $checkRepo    = new DeviceCheckRepository($this->container->get('db'));
         $recentChecks  = $checkRepo->findRecentByDevice($id, 50);
@@ -248,6 +249,115 @@ class DeviceController extends Controller
         $repo->update($id, compact('name', 'address', 'description'));
 
         header('Location: /devices');
+        exit;
+    }
+
+    /**
+     * GET /devices/{id}/merge
+     *
+     * Renders the Merge Device form. Lists all other active devices as
+     * potential merge targets. Returns 404 if the source device is not found.
+     */
+    public function mergeForm(array $params = []): void
+    {
+        $id   = (int) ($params['id'] ?? 0);
+        $repo = new DeviceRepository($this->container->get('db'));
+
+        $device = $repo->findById($id);
+        if ($device === null) {
+            http_response_code(404);
+            echo 'Device not found.';
+            return;
+        }
+
+        // All active devices except the source are valid merge targets.
+        $candidates = array_values(array_filter(
+            $repo->findAllForSelect(),
+            fn($d) => (int) $d['id'] !== $id
+        ));
+
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+
+        $pageTitle     = 'Merge Device';
+        $activeSection = 'Devices';
+        $errors        = [];
+
+        $viewsPath = __DIR__ . '/../../Views';
+
+        ob_start();
+        require $viewsPath . '/devices/merge.php';
+        $content = ob_get_clean();
+
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        require $viewsPath . '/layouts/app.php';
+    }
+
+    /**
+     * POST /devices/{id}/merge
+     *
+     * Validates the selected target device and executes the merge via
+     * DeviceRepository::mergeInto(). On success, redirects to the target
+     * device page with a ?merged= query parameter so the detail page can
+     * display a one-time confirmation banner.
+     *
+     * Re-renders the merge form at HTTP 422 on any validation error.
+     */
+    public function merge(array $params = []): void
+    {
+        $sourceId = (int) ($params['id'] ?? 0);
+        $repo     = new DeviceRepository($this->container->get('db'));
+
+        $device = $repo->findById($sourceId);
+        if ($device === null) {
+            http_response_code(404);
+            echo 'Device not found.';
+            return;
+        }
+
+        $targetId = (int) ($_POST['target_device_id'] ?? 0);
+
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+        $pageTitle     = 'Merge Device';
+        $activeSection = 'Devices';
+
+        // Validate selection.
+        $errors = [];
+
+        if ($targetId === 0) {
+            $errors['target_device_id'] = 'Please select a target device.';
+        } elseif ($targetId === $sourceId) {
+            $errors['target_device_id'] = 'Cannot merge a device into itself.';
+        } else {
+            $target = $repo->findById($targetId);
+            if ($target === null) {
+                $errors['target_device_id'] = 'Selected target device was not found or has been deleted.';
+            }
+        }
+
+        if (!empty($errors)) {
+            $candidates = array_values(array_filter(
+                $repo->findAllForSelect(),
+                fn($d) => (int) $d['id'] !== $sourceId
+            ));
+
+            $viewsPath = __DIR__ . '/../../Views';
+
+            ob_start();
+            require $viewsPath . '/devices/merge.php';
+            $content = ob_get_clean();
+
+            http_response_code(422);
+            header('Content-Type: text/html; charset=utf-8');
+            require $viewsPath . '/layouts/app.php';
+            return;
+        }
+
+        $repo->mergeInto($sourceId, $targetId);
+
+        // Redirect to target device with a flash hint so the page can show a banner.
+        $encodedName = urlencode($device['name']);
+        header("Location: /devices/{$targetId}?merged=" . $encodedName);
         exit;
     }
 

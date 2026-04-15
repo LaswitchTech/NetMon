@@ -243,6 +243,33 @@ Merging must:
 Do NOT assume:
 - one IP = one device
 
+### Suggestion Systems (Duplicates & Matches)
+
+The system may provide **suggestions** based on identity signals, but must NEVER take automatic action.
+
+Rules:
+- Suggestions are **informational only**
+- No automatic merge, link, or mutation is allowed
+- Operator must always confirm actions
+
+Signal strength:
+- MAC address = strong signal (preferred)
+- Hostname = weaker, heuristic signal
+
+Implementation guidelines:
+- Always label the signal clearly in the UI
+- Always explain that suggestions are not actions
+- Never hide uncertainty from the operator
+
+Separation of concerns:
+- Device duplicate suggestions (device ↔ device)
+- Discovery match suggestions (finding ↔ device)
+
+These systems must:
+- Avoid false certainty
+- Avoid destructive automation
+- Remain safe by default
+
 ---
 
 ### Architecture Expectations

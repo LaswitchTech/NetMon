@@ -117,6 +117,23 @@ class AlertRepository
     }
 
     // -------------------------------------------------------------------------
+    // Counts (dashboard)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the number of currently open alerts.
+     *
+     * @return int
+     */
+    public function countOpen(): int
+    {
+        $row = $this->db->fetchOne(
+            "SELECT COUNT(*) AS cnt FROM alerts WHERE status = 'open'"
+        );
+        return (int) ($row['cnt'] ?? 0);
+    }
+
+    // -------------------------------------------------------------------------
     // Lookup
     // -------------------------------------------------------------------------
 

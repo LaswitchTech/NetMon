@@ -349,9 +349,73 @@ PHP emits one `makeLatencyChart()` + `makeStatusChart()` call pair per service i
 | No scheduling | One pass per invocation. Continuous monitoring requires an external scheduler (cron). |
 | Sequential | Both device and service checks run one at a time. A parallel runner is a future improvement. |
 | exec() required for device checks | Environments where exec() is disabled will produce `error` results for all device checks. Service checks use `fsockopen()` and are unaffected. |
-| No retention policy | `device_checks` and `service_checks` grow unboundedly. Cleanup jobs should be added before production use. |
+| No retention policy | ~~`device_checks` and `service_checks` grow unboundedly.~~ Retention cleanup implemented — see [Retention & Cleanup](#retention--cleanup). |
 | `devices.last_check_at` transitional | Deprecated per the domain model. Still written for the device detail overview card. Will be removed once no consumers remain. |
 | No aggregation on graphs | Each check row is one point — useful for low-frequency polling, noisy for high frequency. |
+
+---
+
+## Retention & Cleanup
+
+`device_checks` and `service_checks` are append-only tables — every monitoring pass adds rows. Without periodic cleanup they grow unboundedly. `notification_history` has the same property. `scripts/cleanup.php` handles pruning all three tables.
+
+### Configuration
+
+Retention thresholds live in `config/monitoring.php` under the `retention` key. Override them per-environment in `config/local.php`:
+
+```php
+// config/local.php
+return [
+    'monitoring' => [
+        'retention' => [
+            'device_checks_days'        => 60,   // keep 60 days of device checks
+            'service_checks_days'       => 60,   // keep 60 days of service checks
+            'notification_history_days' => 180,  // keep 180 days of notification history
+        ],
+    ],
+];
+```
+
+**Defaults (config/monitoring.php):**
+
+| Key | Default | Table cleaned |
+|-----|---------|---------------|
+| `device_checks_days` | 30 | `device_checks` (cutoff: `checked_at`) |
+| `service_checks_days` | 30 | `service_checks` (cutoff: `checked_at`) |
+| `notification_history_days` | 90 | `notification_history` (cutoff: `created_at`) |
+
+### Running cleanup
+
+```bash
+php scripts/cleanup.php
+```
+
+Example output:
+
+```
+── Cleanup Summary
+Device checks deleted:  1243
+Service checks deleted: 842
+Notifications deleted:  211
+```
+
+The script is **idempotent** — running it multiple times in a row produces the same end state (rows already deleted are simply not found again).
+
+### What cleanup never touches
+
+- `alerts` — alert history is preserved regardless of retention settings
+- `devices.status`, `devices.last_check_at` — summary columns are never modified
+- `monitored_services.last_state`, `monitored_services.last_check_at` — same
+
+### Repository methods
+
+| Method | Table | Cutoff column |
+|--------|-------|---------------|
+| `DeviceCheckRepository::deleteOlderThan(\DateTime $cutoff): int` | `device_checks` | `checked_at` |
+| `ServiceCheckRepository::deleteOlderThan(\DateTime $cutoff): int` | `service_checks` | `checked_at` |
+| `NotificationRepository::deleteOlderThan(\DateTime $cutoff): int` | `notification_history` | `created_at` |
+
+All three methods use indexed columns and return the count of deleted rows.
 
 ---
 
@@ -369,4 +433,4 @@ PHP emits one `makeLatencyChart()` + `makeStatusChart()` call pair per service i
 | HTTP/HTTPS checks | `HttpChecker` class; status code validation. |
 | UDP checks | Protocol-specific probes required; non-trivial. |
 | Parallel runner | Performance improvement; not required for correctness. |
-| Check retention | Purge or cap old `device_checks` / `service_checks` rows. |
+| ~~Check retention~~ | Done — `scripts/cleanup.php` with config-driven thresholds. |

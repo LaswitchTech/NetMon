@@ -2,8 +2,16 @@
 
 /** @var \App\Core\Router $router */
 
-$router->get('/',        'NetMon\Controllers\HomeController@index',   ['WebAuth']);
-$router->get('/devices', 'NetMon\Controllers\DeviceController@index', ['WebAuth']);
+$router->get('/',           'NetMon\Controllers\HomeController@index',      ['WebAuth']);
+$router->get('/devices',    'NetMon\Controllers\DeviceController@index',   ['WebAuth']);
+$router->get('/discovery',  'NetMon\Controllers\DiscoveryController@index', ['WebAuth']);
+// NOTE: /discovery/{id}/create-device must be before /discovery/{id} to avoid path ambiguity.
+$router->get('/discovery/{id}/create-device',  'NetMon\Controllers\DiscoveryController@createDeviceForm', ['WebAuth']);
+$router->post('/discovery/{id}/create-device', 'NetMon\Controllers\DiscoveryController@createDevice',     ['WebAuth']);
+$router->get('/discovery/{id}',                'NetMon\Controllers\DiscoveryController@show',             ['WebAuth']);
+$router->post('/discovery/{id}/link',          'NetMon\Controllers\DiscoveryController@link',             ['WebAuth']);
+$router->post('/discovery/{id}/ignore',        'NetMon\Controllers\DiscoveryController@ignore',           ['WebAuth']);
+
 $router->get('/alerts',                   'NetMon\Controllers\AlertController@index',       ['WebAuth']);
 // NOTE: /alerts/{id} must come after /alerts to avoid empty-string capture.
 $router->get('/alerts/{id}',              'NetMon\Controllers\AlertController@show',        ['WebAuth']);
@@ -18,6 +26,8 @@ $router->get('/devices/{id}',             'NetMon\Controllers\DeviceController@s
 $router->get('/devices/{id}/edit',        'NetMon\Controllers\DeviceController@editForm',   ['WebAuth']);
 $router->post('/devices/{id}',            'NetMon\Controllers\DeviceController@update',     ['WebAuth']);
 $router->post('/devices/{id}/delete',     'NetMon\Controllers\DeviceController@delete',     ['WebAuth']);
+$router->get('/devices/{id}/merge',       'NetMon\Controllers\DeviceController@mergeForm',  ['WebAuth']);
+$router->post('/devices/{id}/merge',      'NetMon\Controllers\DeviceController@merge',      ['WebAuth']);
 
 // Authentication (public — no middleware)
 $router->get('/auth/login',   'AuthController@loginForm');

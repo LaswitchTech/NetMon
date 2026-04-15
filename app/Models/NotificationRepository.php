@@ -64,6 +64,29 @@ class NotificationRepository
     }
 
     // -------------------------------------------------------------------------
+    // Retention cleanup
+    // -------------------------------------------------------------------------
+
+    /**
+     * Delete notification_history rows older than $cutoff.
+     *
+     * Uses the indexed `created_at` column for efficient range deletion.
+     * Only rows strictly before the cutoff are removed.
+     *
+     * The alerts table is never touched by this method.
+     *
+     * @param  \DateTime $cutoff  Delete rows with created_at before this instant
+     * @return int                Number of rows deleted
+     */
+    public function deleteOlderThan(\DateTime $cutoff): int
+    {
+        return $this->db->execute(
+            "DELETE FROM notification_history WHERE created_at < ?",
+            [$cutoff->format('Y-m-d H:i:s')]
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Read
     // -------------------------------------------------------------------------
 

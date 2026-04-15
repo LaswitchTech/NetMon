@@ -377,19 +377,28 @@ The UI will show a list of `discovery_findings WHERE merge_status = 'pending'`. 
 - **Attach to existing device** — sets `merged_device_id`, creates an interface+address entry
 - **Ignore** — sets `merge_status = 'ignored'`
 
-### Manual device merge
+### Manual device merge (implemented)
 
-When an admin determines that two existing `devices` rows represent the same physical host:
+Operators merge devices via `GET /devices/{id}/merge` → `POST /devices/{id}/merge`. No automatic merging is allowed.
 
-1. Pick the **canonical** device (the one to keep).
-2. Transfer all interfaces (`device_interfaces`) from the duplicate to the canonical device.
-3. Transfer all `monitored_services`, open `alerts`, and `discovery_findings` references.
-4. Set on the duplicate row: `merged_into_device_id = canonical.id`, `deleted_at = now`.
-5. Log the merge action in `notification_history` or a dedicated audit log (future).
+The merge is executed by `DeviceRepository::mergeInto(int $sourceId, int $targetId)`:
 
-Merged devices are excluded from all normal queries by adding `WHERE deleted_at IS NULL` to device queries. Their historical `service_checks`, `alerts`, and `notification_history` rows remain intact and are accessible via the canonical device.
+1. Validate that source ≠ target and both are active (non-deleted) devices.
+2. Transfer `device_interfaces`: `UPDATE device_interfaces SET device_id = target WHERE device_id = source`.
+   `device_addresses` follow automatically (linked via `interface_id`, not `device_id`).
+3. Transfer `monitored_services`: `UPDATE monitored_services SET device_id = target WHERE device_id = source`.
+4. Transfer `alerts`: `UPDATE alerts SET device_id = target WHERE device_id = source`.
+5. Retarget `discovery_findings`: `UPDATE discovery_findings SET matched_device_id = target WHERE matched_device_id = source`.
+6. Soft-delete source: `UPDATE devices SET merged_into_device_id = target, deleted_at = now WHERE id = source`.
 
-**Note:** The `merged_into_device_id` self-reference is intentionally shallow (one level). Chains (A → B → C) are prevented by the UI: you can only merge into an active (non-merged) device.
+Nothing is hard-deleted. All historical check data (`device_checks`, `service_checks`) is preserved.
+
+After the merge the browser redirects to the target device page (`/devices/{targetId}?merged=SourceName`)
+where a dismissible success banner confirms the operation.
+
+Merged devices are excluded from all normal queries by `WHERE deleted_at IS NULL`. Their historical records remain intact and are reachable via the canonical (target) device after the transfer.
+
+**No chains.** `merged_into_device_id` is intentionally shallow (one level). Chains (A → B → C) are prevented because the UI only lists active (non-deleted) devices as merge targets, enforced by `DeviceRepository::findAllForSelect()` which filters `WHERE deleted_at IS NULL`.
 
 ---
 
