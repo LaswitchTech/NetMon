@@ -1,0 +1,124 @@
+// ============================================================
+// NetMon — Form controls
+// ============================================================
+
+// Override Bootstrap form control tokens
+.form-control,
+.form-select {
+    --bs-body-bg:         var(--app-input-bg);
+    background-color:     var(--app-input-bg);
+    color:                var(--app-text);
+    border-color:         var(--app-border);
+    border-radius:        calc(var(--app-radius) / 2);
+
+    &::placeholder {
+        color: var(--app-text-muted);
+        opacity: 1;
+    }
+
+    &:focus {
+        background-color: var(--app-input-bg);
+        color:            var(--app-text);
+        border-color:     var(--app-primary);
+        box-shadow:       0 0 0 0.2rem rgba(var(--app-primary-rgb), 0.25);
+    }
+
+    &:disabled,
+    &[readonly] {
+        background-color: var(--app-panel-3);
+        color:            var(--app-text-muted);
+    }
+}
+
+.form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%239aa4b2' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+}
+
+// Form label
+.form-label {
+    color:       var(--app-text);
+    font-size:   0.85rem;
+    font-weight: 500;
+    margin-bottom: 0.35rem;
+}
+
+// Form text (hint)
+.form-text {
+    color: var(--app-text-muted);
+    font-size: 0.8rem;
+}
+
+// Checkboxes / radios
+.form-check-input {
+    background-color: var(--app-input-bg);
+    border-color:     var(--app-border);
+
+    &:checked {
+        background-color: var(--app-primary);
+        border-color:     var(--app-primary);
+    }
+
+    &:focus {
+        box-shadow: 0 0 0 0.2rem rgba(var(--app-primary-rgb), 0.25);
+    }
+}
+
+.form-check-label {
+    color: var(--app-text);
+    font-size: 0.875rem;
+}
+
+// Input group
+.input-group-text {
+    background-color: var(--app-panel-2);
+    border-color:     var(--app-border);
+    color:            var(--app-text-muted);
+}
+
+// Validation feedback colours stay Bootstrap defaults
+// (success=green, danger=red) — no override needed
+
+// ── Auth / login form card ────────────────────────────────────
+.auth-card {
+    background: var(--app-panel);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    box-shadow: var(--app-shadow);
+    padding: 2rem;
+    width: 100%;
+    max-width: 400px;
+
+    .auth-card-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+
+        .auth-card-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--app-primary);
+            border-radius: var(--app-radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 1.5rem;
+        }
+    }
+
+    .auth-card-title {
+        font-weight: 700;
+        font-size: 1.25rem;
+        color: var(--app-text);
+        text-align: center;
+        margin-bottom: 0.25rem;
+    }
+
+    .auth-card-subtitle {
+        font-size: 0.85rem;
+        color: var(--app-text-muted);
+        text-align: center;
+        margin-bottom: 1.5rem;
+    }
+}

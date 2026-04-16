@@ -1,0 +1,42 @@
+// ============================================================
+// NetMon — LESS entry point
+// Compiled to: public/assets/css/app.css
+// Build: npm run build:css
+// Watch: npm run watch:css
+//
+// Import order matters:
+//   1. LESS compile-time variables (@vars)
+//   2. Theme CSS custom property definitions (:root / [data-bs-theme])
+//   3. Base / reset
+//   4. Layout shell
+//   5. Bootstrap component overrides
+//   6. Component styles
+//   7. Module styles
+// ============================================================
+
+// 1. Compile-time constants
+@import "variables";
+
+// 2. Theme tokens — dark is default (:root), light is opt-in
+@import "themes/dark";
+@import "themes/light";
+
+// 3. Base / reset
+@import "base";
+
+// 4. Shell layout
+@import "layout";
+
+// 5. Bootstrap component overrides
+@import "bootstrap-overrides";
+
+// 6. Components
+@import "components/sidebar";
+@import "components/topbar";
+@import "components/cards";
+@import "components/tables";
+@import "components/forms";
+@import "components/footer";
+
+// 7. Module-specific styles
+@import "modules/chat";

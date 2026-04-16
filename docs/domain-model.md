@@ -10,6 +10,7 @@
 > - **Phase 7 complete:** `notification_history` table (migration 0016) and notifications engine integrated into `scripts/monitor.php`. Log and webhook channels, 15-minute throttle, `open`/`reminder` notification types. See [notifications.md](notifications.md).
 > - **Phase 8 complete:** `monitored_services` (migration 0017) and `service_checks` (migration 0018) implemented. `TcpChecker` added. Service-level TCP checks integrated into the monitoring runner. Device detail page shows services and their current state. See [services.md](services.md).
 > - **Phase 9 complete:** `service_down` alert type wired into the monitoring runner's service pass. Identical deduplication and notification logic as `device_offline`. Notifications flow through existing log/webhook channels automatically. See [alerts.md](alerts.md).
+> - **Phase 10 complete:** Discovery subsystem (`discovery_jobs`, `discovery_findings` tables — migrations 0019–0020), subnet scanner, ARP resolver, enrichment, operator action workflow (link / create device / ignore), and duplicate/match suggestion system. See [discovery.md](discovery.md) and [devices.md](devices.md).
 > - All subsequent phases are planned but not yet implemented.
 >
 > Related: [schema.md](schema.md) · [devices.md](devices.md) · [monitoring.md](monitoring.md) · [architecture.md](architecture.md)
@@ -30,7 +31,7 @@
 
 ---
 
-## Current Implemented Schema (Phase 1–8)
+## Current Implemented Schema (Phase 1–10)
 
 These tables exist in the database today.
 
@@ -42,6 +43,7 @@ devices ──< device_interfaces ──< device_addresses
 devices ──< device_checks
 devices ──< monitored_services ──< service_checks
 devices ──< alerts ──< notification_history
+discovery_jobs ──< discovery_findings ──→ devices (matched_device_id, nullable)
 ```
 
 | Table | Status |
@@ -58,9 +60,19 @@ devices ──< alerts ──< notification_history
 | `device_addresses` | Implemented — migration 0012 |
 | `device_checks` | Implemented — migration 0014 (Phase 5: device-level check history) |
 | `alerts` | Implemented — migration 0015 (Phase 6: stateful alert engine) |
-| `notification_history` | Implemented — migration 0016 (Phase 7: notification dispatch log) |
+| `notification_history` | Implemented — migration 0016 (Phase 7: alert notification dispatch log) |
 | `monitored_services` | Implemented — migration 0017 (Phase 8: service configuration per device) |
 | `service_checks` | Implemented — migration 0018 (Phase 8: service-level check history) |
+| `discovery_jobs` | Implemented — migration 0019 (Phase 10: discovery job configuration) |
+| `discovery_findings` | Implemented — migration 0020 (Phase 10: per-IP discovered hosts) |
+
+### Planned tables (not yet implemented)
+
+| Table | Migration | Purpose | Design doc |
+|-------|-----------|---------|------------|
+| `notes` | 0021 | Polymorphic entity annotations (device, alert, finding, etc.) | [notes-module.md](notes-module.md) |
+| `module_notifications` | 0022 | Notification events (title, body, source context) | [notifications-module.md](notifications-module.md) |
+| `module_notification_deliveries` | 0023 | Per-user per-channel delivery records and inbox state | [notifications-module.md](notifications-module.md) |
 
 **Transitional dual-source state:** `devices.host` and `device_addresses` both contain the same host/IP. The read path and write path both use `device_addresses` (with `devices.host` as a fallback/sync target). `devices.host` can be dropped once the monitoring runner no longer needs it — currently it is kept in sync but not used as the primary address source. See [Migration Path](#migration-path-v1-→-full-model).
 
@@ -477,9 +489,12 @@ These are ordered by value delivered and dependency chain.
 | **7** ✓ | `notification_history` + log/webhook dispatch in monitoring runner | 0016 | Notifications sent and logged with 15-min throttle |
 | **8** ✓ | `monitored_services` + `service_checks` + TCP service check runner | 0017–0018 | Service-level monitoring foundation, device detail shows services |
 | **9** ✓ | `service_down` alert type wired in runner service pass | — (code only) | Service failures create stateful alerts; notifications via existing channels |
-| **10** | `monitored_services` CRUD UI | — (code only) | Services configurable from the browser |
-| **11** | `discovery_jobs` + `discovery_findings` + scan runner | 0019–0020 | Subnet discovery, pending review UI |
-| **12** | Drop deprecated `devices.host` + `devices.last_check_at` | — | Schema cleanup |
+| **10** ✓ | `discovery_jobs` + `discovery_findings` + scan runner + operator workflow + suggestion system | 0019–0020 | Subnet discovery, link/create/ignore actions, MAC/hostname suggestions |
+| **11** | **Notes module** — `notes` table; `NoteRepository`, `NoteService`; device detail Notes section | 0021 | Operator annotations on devices (and any future entity) |
+| **12** | **Device detail — Alerts section** — add `findByDevice()` to controller + view section | — (code only) | Device detail page shows open alerts in context |
+| **13** | **Reusable Notifications module** — `module_notifications` + `module_notification_deliveries`; `InAppChannel`, `EmailChannel`; user inbox UI | 0022–0023 | In-app notification inbox, email delivery, badge count in nav |
+| **14** | `monitored_services` CRUD UI | — (code only) | Services configurable from the browser |
+| **15** | Drop deprecated `devices.host` + `devices.last_check_at` | — | Schema cleanup |
 
 **Phase 3 (repository refactor) must come before Phase 5 (monitoring runner).** The runner needs to know which address to check. If `DeviceRepository` still reads `devices.host` instead of `device_addresses`, the runner cannot use the new multi-IP model.
 

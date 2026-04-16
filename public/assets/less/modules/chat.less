@@ -1,0 +1,67 @@
+// ============================================================
+// NetMon — Chat module styles (placeholder)
+// Styles for the reusable Chat module when it is implemented.
+// ============================================================
+
+// Structure mirrors the chat-manager reference design.
+// Fill in when App\Modules\Chat is built.
+
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--app-panel);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    overflow: hidden;
+
+    .chat-header {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--app-border);
+        background: var(--app-panel-2);
+        font-weight: 600;
+        color: var(--app-text);
+    }
+
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .chat-message {
+        .chat-message-meta {
+            font-size: 0.75rem;
+            color: var(--app-text-muted);
+            margin-bottom: 0.2rem;
+        }
+
+        .chat-message-body {
+            background: var(--app-panel-2);
+            border: 1px solid var(--app-border);
+            border-radius: calc(var(--app-radius) / 1.5);
+            padding: 0.5rem 0.75rem;
+            color: var(--app-text);
+            font-size: 0.875rem;
+        }
+
+        &.own .chat-message-body {
+            background: var(--app-nav-active-bg);
+            border-color: rgba(var(--app-primary-rgb), 0.25);
+        }
+    }
+
+    .chat-input-area {
+        padding: 0.75rem 1rem;
+        border-top: 1px solid var(--app-border);
+        background: var(--app-panel-2);
+        display: flex;
+        gap: 0.5rem;
+
+        .form-control {
+            flex: 1;
+        }
+    }
+}

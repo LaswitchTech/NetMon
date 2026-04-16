@@ -1,0 +1,12 @@
+{
+  "name": "netmon",
+  "private": true,
+  "description": "NetMon frontend asset build",
+  "scripts": {
+    "build:css": "lessc public/assets/less/app.less public/assets/css/app.css",
+    "watch:css": "lessc --watch public/assets/less/app.less public/assets/css/app.css"
+  },
+  "devDependencies": {
+    "less": "^4.2.0"
+  }
+}

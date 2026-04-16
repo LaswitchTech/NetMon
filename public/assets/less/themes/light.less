@@ -1,0 +1,40 @@
+// ============================================================
+// NetMon — Light theme token definitions
+// Applied to [data-bs-theme="light"] (opt-in override).
+// Only tokens that differ from dark theme need to be listed.
+// ============================================================
+
+[data-bs-theme="light"] {
+    // Background layers
+    --app-bg:               #f0f2f5;
+    --app-panel:            #ffffff;
+    --app-panel-2:          #f8f9fa;
+    --app-panel-3:          #f0f2f5;
+    --app-input-bg:         #ffffff;
+
+    // Borders
+    --app-border:           #dee2e6;
+    --app-border-subtle:    rgba(0, 0, 0, 0.06);
+
+    // Text
+    --app-text:             #212529;
+    --app-text-muted:       #6c757d;
+
+    // Navigation states
+    --app-nav-active-bg:    rgba(13, 110, 253, 0.10);
+    --app-nav-active-text:  #0d6efd;
+    --app-nav-hover-bg:     rgba(0, 0, 0, 0.04);
+
+    // Structural surfaces
+    --app-sidebar-bg:       rgba(255, 255, 255, 0.95);
+    --app-topbar-bg:        rgba(255, 255, 255, 0.85);
+
+    // Decoration
+    --app-shadow:           0 0.25rem 0.75rem rgba(0, 0, 0, 0.08);
+    --app-code-color:       #0d6efd;
+
+    // Bootstrap override bridge tokens
+    --bs-body-bg:           var(--app-bg);
+    --bs-body-color:        var(--app-text);
+    --bs-border-color:      var(--app-border);
+}

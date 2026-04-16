@@ -125,6 +125,7 @@ Browser
 | `findById(int $id): ?array` | Return a single active device by ID; null if not found or soft-deleted |
 | `findAllForSelect(): array` | Return lightweight id/name list of all active devices (for dropdowns) |
 | `findInterfacesWithAddresses(int $deviceId): array` | Return all interfaces with nested address arrays for one device |
+| `possibleDuplicates(int $deviceId): array` | Return other active devices that share a strong identity signal (MAC or hostname); informational only |
 | `create(array $data): int` | Create a device with a default management interface and primary address; return new device ID |
 | `update(int $id, array $data): void` | Update a device's name and primary address (upserts interface/address records) |
 | `softDelete(int $id): void` | Set `deleted_at`; device is excluded from all active queries thereafter |
@@ -336,6 +337,49 @@ Both columns currently contain the same value for all devices. The system is in 
 
 ---
 
+## Duplicate-Device Suggestions
+
+The Device Detail page (`GET /devices/{id}`) may display a **Possible Duplicate Devices** warning card when other active devices share a strong identity signal with the current device. These suggestions are **informational only** — no merge or action is taken automatically.
+
+### How it works
+
+`DeviceRepository::possibleDuplicates(int $deviceId): array` runs two read-only queries:
+
+1. **MAC address match (strong signal)**
+   Finds other active devices that share any `device_interfaces.mac_address` value with the current device. A shared MAC strongly suggests the same physical NIC, and therefore the same physical host.
+
+2. **Hostname match via discovery (weaker signal)**
+   Finds other active devices linked (via `matched_device_id`) to a discovery finding whose `hostname` matches any hostname linked to the current device. Hostname matches are heuristic — the same hostname can appear on different subnets or on re-assigned hosts.
+
+Results are returned in priority order: MAC matches first, then hostname-only matches for devices not already present via a MAC match. The device itself is never included. Soft-deleted devices are excluded.
+
+Each result row carries:
+- `match_reason` — `'mac'` or `'hostname'`
+- `match_value` — the shared MAC or hostname string
+
+### UI behaviour
+
+When `$possibleDuplicates` is non-empty, the view renders a left-yellow-bordered card above the Interfaces section. Each suggestion shows:
+
+| Column | Content |
+|--------|---------|
+| Device | Linked name → `/devices/{id}` |
+| Address | Management address of the candidate |
+| Signal | Badge: **MAC match** (warning) or **Hostname match** (secondary) + "weaker signal" note |
+| Matched Value | The shared MAC or hostname |
+| Action | **Merge** button → `/devices/{current-id}/merge` |
+
+The card is hidden entirely when there are no suggestions (`if (!empty($possibleDuplicates))`).
+
+### Rules enforced
+
+- No automatic merge, link, or mutation ever occurs from this feature.
+- The operator must navigate to the merge form and explicitly confirm a merge.
+- MAC matches are labelled as strong but the UI notes they are not infallible (NICs can be replaced).
+- Hostname matches are labelled as weaker and heuristic.
+
+---
+
 ## Merge Workflow
 
 The merge feature lets operators consolidate two device records that represent the same physical host into a single canonical device. All merges are explicit and operator-driven — no automatic merging ever occurs.
@@ -408,11 +452,93 @@ After a merge, a single target device holds interfaces and addresses from both t
 
 | Item | Notes |
 |------|-------|
-| MAC-based merge suggestion | When two devices share the same MAC address, surface a suggestion in the UI (no auto-merge) |
+| ~~MAC-based merge suggestion~~ | Done — `possibleDuplicates()` surfaces MAC and hostname signals on the device detail page |
 | Merge audit log | Record who merged what and when in a dedicated audit table |
 | Merge conflict detection | Warn if both devices have an open alert of the same type before merging |
 | Undo / split | Allow an operator to split a merged device back out (requires separate implementation) |
 | Merge from discovery | Shortcut on the discovery finding detail page to merge into an existing device |
+
+---
+
+## Target Device Detail Page Structure
+
+The device detail page (`GET /devices/{id}`) is the primary operational view for a device. It should evolve into a complete, single-page summary of everything known about a device.
+
+### Current sections (implemented)
+
+| # | Section | Source | Notes |
+|---|---------|--------|-------|
+| 1 | Merge success banner | `$_GET['merged']` | Conditional — shown after a merge redirect |
+| 2 | Breadcrumb | — | Static |
+| 3 | Page heading + Edit/Merge buttons | `$device` | — |
+| 4 | Overview card | `$device` | Name, management address, description, added date |
+| 5 | Current Status card | `$device` | Status badge, last check timestamp |
+| 6 | Open Alerts | `$openAlerts` | Conditional — red-accented card when alerts exist; green "no alerts" strip otherwise |
+| 7 | Possible Duplicate Devices | `$possibleDuplicates` | Conditional — hidden when empty |
+| 8 | Interfaces & Addresses | `$interfaces` | Nested interface → addresses table |
+| 9 | Monitored Services | `$services` | Current state per service |
+| 10 | Service History graphs | `$serviceHistories` | Latency line + status strip per service |
+| 11 | Monitoring History graphs | `$historySeries` | Device-level latency + status strip |
+| 12 | Recent Check History | `$recentChecks` | Last 50 device-level checks (DataTables) |
+
+### Open Alerts section — implementation notes
+
+**Controller:** `DeviceController::show()` loads all device alerts via `AlertRepository::findByDevice($id)` and filters to `status = 'open'` in PHP. No new repository method or schema change needed.
+
+```php
+$alertRepo  = new AlertRepository($this->container->get('db'));
+$openAlerts = array_values(array_filter(
+    $alertRepo->findByDevice($id),
+    fn($a) => $a['status'] === 'open'
+));
+```
+
+**View behaviour:**
+- Always rendered (not just when non-empty): shows a compact "No open alerts" strip when empty, a red-left-bordered card when alerts exist
+- Placed between Status card and Possible Duplicate Devices
+- Columns: Type (human-readable), Service (name:port or —), Occurrences, Last Seen, View link
+- Alert type is rendered via `alertTypeLabel()` helper in the view (`device_offline` → "Device Offline")
+- Uses DataTables (`#tbl-open-alerts`) sorted by Last Seen descending
+- Each row links to `/alerts/{id}` for full detail and operator actions
+- Does not replace the `/alerts` page — it is a contextual summary only
+
+### Planned additions
+
+| # | Section | Source | Depends on |
+|---|---------|--------|------------|
+| 13 | **Notes** | `NoteRepository::findByEntity('device', $id)` | Notes module (migration 0021) |
+
+#### Section 13 — Notes
+
+Displays all notes attached to this device with an inline add-note form.
+
+**Controller change:** add to `DeviceController::show()`:
+```php
+$noteRepo    = new \App\Modules\Notes\Models\NoteRepository($this->container->get('db'));
+$deviceNotes = $noteRepo->findByEntity('device', $id);
+```
+
+**New route:**
+```
+POST /devices/{id}/notes    → DeviceController::addNote()
+```
+
+**View behaviour:**
+- Placed at the bottom of the page (least urgent section)
+- Each note shows: content, author (username or display_name; "deleted user" if null), relative timestamp
+- Add-note form: single `<textarea>` + submit; inline below existing notes
+- Empty state: "No notes yet."
+- See [notes-module.md](notes-module.md) for full module design
+
+### Ordering rationale
+
+The page is ordered from most operationally urgent (status, alerts) to most contextual (interfaces, history, notes):
+
+```
+[Status] → [Alerts] → [Network structure] → [Service state] → [History] → [Annotations]
+```
+
+Possible Duplicate Devices sits near the top because it signals an operator action may be needed.
 
 ---
 
@@ -426,9 +552,12 @@ After a merge, a single target device holds interfaces and addresses from both t
 | ~~Input validation (IP/hostname format)~~ | Done — Phase 4 |
 | ~~Monitoring integration~~ | Done — Phase 5: `scripts/monitor.php` reads `device_addresses` for check targets |
 | ~~Device detail page~~ | Done — Phase 6: `GET /devices/{id}` shows overview, interfaces, recent check history |
-| `devices.host` removal | Blocked until UI reads status/latency from `device_checks` rather than `devices.status` (Phase 6+) |
-| Check history graphs | Requires charting library integration; data is already available in `device_checks` |
-| Service-level monitoring | Requires `monitored_services` + `service_checks` tables; see monitoring.md |
+| ~~Check history graphs~~ | Done — Chart.js latency + status strip charts |
+| ~~Service-level monitoring~~ | Done — Phase 8: monitored_services + service_checks |
+| ~~Duplicate suggestions~~ | Done — `possibleDuplicates()` with MAC + hostname signals |
+| ~~Device detail — Alerts section~~ | Done — `$openAlerts` via `AlertRepository::findByDevice()`, DataTables, red accent card |
+| Device detail — Notes section | Planned — requires Notes module (migration 0021); see [notes-module.md](notes-module.md) |
+| `devices.host` removal | Blocked until monitoring runner no longer references `devices.host` directly |
 | Name uniqueness check | Not yet enforced at the DB or application layer |
 | Pagination | Needed as device count grows |
 | Search / filter | Filter by status, search by name or address |

@@ -1,0 +1,116 @@
+// ============================================================
+// NetMon — Table and DataTables theming
+// Bootstrap 5 tables + DataTables wrapper elements
+// ============================================================
+
+// ── Bootstrap table base overrides ───────────────────────────
+.table {
+    --bs-table-bg:              transparent;
+    --bs-table-color:           var(--app-text);
+    --bs-table-border-color:    var(--app-border);
+    --bs-table-striped-bg:      var(--app-panel-2);
+    --bs-table-hover-bg:        var(--app-nav-hover-bg);
+    --bs-table-active-bg:       var(--app-nav-active-bg);
+
+    color: var(--app-text);
+
+    thead th {
+        background: var(--app-panel-2);
+        color: var(--app-text-muted);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        border-bottom: 1px solid var(--app-border);
+        white-space: nowrap;
+    }
+
+    tbody tr {
+        transition: background @transition-speed @transition-ease;
+    }
+}
+
+// ── DataTables wrapper ────────────────────────────────────────
+div.dataTables_wrapper {
+    color: var(--app-text);
+
+    // Controls row (length select + filter input)
+    div.dataTables_length,
+    div.dataTables_filter {
+        label {
+            color: var(--app-text-muted);
+            font-size: 0.85rem;
+        }
+
+        select,
+        input[type="search"] {
+            background-color: var(--app-input-bg);
+            color: var(--app-text);
+            border: 1px solid var(--app-border);
+            border-radius: calc(var(--app-radius) / 2);
+            padding: 0.25rem 0.5rem;
+            font-size: 0.85rem;
+
+            &:focus {
+                border-color: var(--app-primary);
+                outline: none;
+                box-shadow: 0 0 0 2px rgba(var(--app-primary-rgb), 0.25);
+            }
+        }
+    }
+
+    // Info text ("Showing X of Y entries")
+    div.dataTables_info {
+        color: var(--app-text-muted);
+        font-size: 0.8rem;
+        padding-top: 0.6rem;
+    }
+
+    // Pagination
+    div.dataTables_paginate {
+        .paginate_button {
+            color: var(--app-text-muted) !important;
+            border-radius: calc(var(--app-radius) / 2) !important;
+            border: 1px solid transparent !important;
+
+            &:hover {
+                background: var(--app-nav-hover-bg) !important;
+                color: var(--app-text) !important;
+                border-color: var(--app-border) !important;
+            }
+
+            &.current {
+                background: var(--app-primary) !important;
+                color: #fff !important;
+                border-color: var(--app-primary) !important;
+
+                &:hover {
+                    background: var(--app-primary) !important;
+                    color: #fff !important;
+                }
+            }
+
+            &.disabled,
+            &.disabled:hover {
+                color: var(--app-text-muted) !important;
+                opacity: 0.5;
+                cursor: default;
+            }
+        }
+    }
+
+    // Processing overlay
+    div.dataTables_processing {
+        background: var(--app-panel-2);
+        color: var(--app-text-muted);
+        border: 1px solid var(--app-border);
+        border-radius: var(--app-radius);
+        box-shadow: var(--app-shadow);
+    }
+
+    // Empty-row message
+    td.dataTables_empty {
+        color: var(--app-text-muted);
+        font-style: italic;
+    }
+}

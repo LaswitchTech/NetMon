@@ -3,6 +3,7 @@
 namespace App\NetMon\Controllers;
 
 use App\Core\Controller;
+use App\Models\AlertRepository;
 use App\Models\DeviceCheckRepository;
 use App\Models\DeviceRepository;
 use App\Models\ServiceCheckRepository;
@@ -79,6 +80,14 @@ class DeviceController extends Controller
             $svcId = (int) $svc['id'];
             $serviceHistories[$svcId] = $serviceRepo->findHistoryByService($svcId, 100);
         }
+
+        // Open alerts for this device — one query, filtered to 'open' in PHP to avoid
+        // a separate repository method for this read path.
+        $alertRepo  = new AlertRepository($this->container->get('db'));
+        $openAlerts = array_values(array_filter(
+            $alertRepo->findByDevice($id),
+            fn($a) => $a['status'] === 'open'
+        ));
 
         [$user, $permissions, $appName, $displayName] = $this->principal();
 

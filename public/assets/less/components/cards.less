@@ -1,0 +1,117 @@
+// ============================================================
+// NetMon — Card component overrides and extensions
+// ============================================================
+
+// ── Stat / metric card ───────────────────────────────────────
+.stat-card {
+    background: var(--app-panel);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    box-shadow: var(--app-shadow);
+    padding: 1.25rem;
+
+    .stat-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--app-text-muted);
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--app-text);
+        line-height: 1.1;
+    }
+
+    .stat-change {
+        font-size: 0.8rem;
+        margin-top: 0.4rem;
+        color: var(--app-text-muted);
+    }
+}
+
+// ── Panel card (content sections) ───────────────────────────
+.panel-card {
+    background: var(--app-panel);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    box-shadow: var(--app-shadow);
+
+    .panel-card-header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--app-border);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+
+        .panel-card-title {
+            flex: 1;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--app-text);
+            margin: 0;
+        }
+
+        .panel-card-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+    }
+
+    .panel-card-body {
+        padding: 1.25rem;
+    }
+
+    .panel-card-footer {
+        padding: 0.75rem 1.25rem;
+        border-top: 1px solid var(--app-border);
+        background: var(--app-panel-2);
+        border-radius: 0 0 var(--app-radius) var(--app-radius);
+        font-size: 0.8rem;
+        color: var(--app-text-muted);
+    }
+}
+
+// ── Section label (card sub-heading) ────────────────────────
+// Replaces the inline style pattern:
+//   style="font-size:.7rem;letter-spacing:.07em;text-transform:uppercase"
+// Use as: <h6 class="section-label mb-3">Title</h6>
+.section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+}
+
+// ── Card accent borders ───────────────────────────────────────
+// Adds a thicker left border to communicate semantic context.
+// Works alongside Bootstrap .card (which already has 1px all-sides border).
+.card-accent-warning {
+    border-left: 3px solid var(--bs-warning) !important;
+}
+.card-accent-danger {
+    border-left: 3px solid var(--bs-danger) !important;
+}
+.card-accent-info {
+    border-left: 3px solid var(--bs-info) !important;
+}
+
+// ── Device / service status indicator ───────────────────────
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+
+    &.status-online    { background: #198754; box-shadow: 0 0 0 2px rgba(25, 135, 84, 0.25); }
+    &.status-offline   { background: #dc3545; box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.25); }
+    &.status-degraded  { background: #ffc107; box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.25); }
+    &.status-unknown   { background: var(--app-text-muted); }
+    &.status-disabled  { background: var(--app-border); }
+}

@@ -1,0 +1,132 @@
+// ============================================================
+// NetMon — Bootstrap 5 component-level token overrides
+// Override Bootstrap's own CSS custom properties so all
+// components adapt to app theme tokens without new selectors.
+// ============================================================
+
+// ── Cards ────────────────────────────────────────────────────
+.card {
+    --bs-card-bg:                var(--app-panel);
+    --bs-card-border-color:      var(--app-border);
+    --bs-card-cap-bg:            var(--app-panel-2);
+    --bs-card-color:             var(--app-text);
+
+    border-radius: var(--app-radius);
+    box-shadow: var(--app-shadow);
+}
+
+// ── Navbar ───────────────────────────────────────────────────
+.navbar {
+    --bs-navbar-color:           var(--app-text-muted);
+    --bs-navbar-hover-color:     var(--app-text);
+    --bs-navbar-active-color:    var(--app-text);
+    --bs-navbar-brand-color:     var(--app-text);
+    --bs-navbar-toggler-border-color: var(--app-border);
+}
+
+// ── Dropdowns ────────────────────────────────────────────────
+.dropdown-menu {
+    --bs-dropdown-bg:            var(--app-panel-2);
+    --bs-dropdown-border-color:  var(--app-border);
+    --bs-dropdown-color:         var(--app-text);
+    --bs-dropdown-link-color:    var(--app-text);
+    --bs-dropdown-link-hover-bg: var(--app-nav-hover-bg);
+    --bs-dropdown-link-hover-color: var(--app-text);
+    --bs-dropdown-link-active-bg:   var(--app-primary);
+    --bs-dropdown-divider-bg:    var(--app-border);
+
+    box-shadow: var(--app-shadow);
+    border-radius: var(--app-radius);
+}
+
+// ── Modals ───────────────────────────────────────────────────
+.modal-content {
+    --bs-modal-bg:               var(--app-panel);
+    --bs-modal-border-color:     var(--app-border);
+    --bs-modal-color:            var(--app-text);
+    --bs-modal-header-bg:        var(--app-panel-2);
+    --bs-modal-footer-bg:        var(--app-panel-2);
+
+    border-radius: var(--app-radius);
+    box-shadow: var(--app-shadow);
+}
+
+// ── List groups ──────────────────────────────────────────────
+.list-group {
+    --bs-list-group-bg:          var(--app-panel);
+    --bs-list-group-border-color:var(--app-border);
+    --bs-list-group-color:       var(--app-text);
+    --bs-list-group-action-hover-bg: var(--app-nav-hover-bg);
+    --bs-list-group-action-hover-color: var(--app-text);
+    --bs-list-group-active-bg:   var(--app-primary);
+    --bs-list-group-active-border-color: var(--app-primary);
+}
+
+// ── Alerts (Bootstrap alert component, not NetMon alerts) ────
+.alert {
+    --bs-alert-border-color:     var(--app-border);
+}
+
+// ── Badges ───────────────────────────────────────────────────
+// No token overrides needed — Bootstrap badges use contextual
+// colors that already work with Bootstrap's color system.
+
+// ── Pagination ───────────────────────────────────────────────
+.pagination {
+    --bs-pagination-bg:              var(--app-panel);
+    --bs-pagination-border-color:    var(--app-border);
+    --bs-pagination-color:           var(--app-text-muted);
+    --bs-pagination-hover-bg:        var(--app-panel-2);
+    --bs-pagination-hover-border-color: var(--app-border);
+    --bs-pagination-hover-color:     var(--app-text);
+    --bs-pagination-active-bg:       var(--app-primary);
+    --bs-pagination-active-border-color: var(--app-primary);
+    --bs-pagination-disabled-bg:     var(--app-panel);
+    --bs-pagination-disabled-border-color: var(--app-border);
+    --bs-pagination-disabled-color:  var(--app-text-muted);
+}
+
+// ── Tooltips ─────────────────────────────────────────────────
+.tooltip {
+    --bs-tooltip-bg:             var(--app-panel-3);
+    --bs-tooltip-color:          var(--app-text);
+}
+
+// ── Popovers ─────────────────────────────────────────────────
+.popover {
+    --bs-popover-bg:             var(--app-panel-2);
+    --bs-popover-border-color:   var(--app-border);
+    --bs-popover-body-color:     var(--app-text);
+    --bs-popover-header-bg:      var(--app-panel-3);
+    --bs-popover-header-color:   var(--app-text);
+
+    box-shadow: var(--app-shadow);
+}
+
+// ── Progress bars ────────────────────────────────────────────
+.progress {
+    --bs-progress-bg:            var(--app-panel-3);
+    --bs-progress-bar-bg:        var(--app-primary);
+}
+
+// ── Accordions ───────────────────────────────────────────────
+.accordion {
+    --bs-accordion-bg:           var(--app-panel);
+    --bs-accordion-border-color: var(--app-border);
+    --bs-accordion-color:        var(--app-text);
+    --bs-accordion-btn-color:    var(--app-text);
+    --bs-accordion-btn-bg:       var(--app-panel);
+    --bs-accordion-btn-active-bg:var(--app-panel-2);
+    --bs-accordion-btn-active-color: var(--app-text);
+    --bs-accordion-active-bg:    var(--app-panel-2);
+    --bs-accordion-active-color: var(--app-text);
+}
+
+// ── Tabs ─────────────────────────────────────────────────────
+.nav-tabs {
+    --bs-nav-tabs-border-color:        var(--app-border);
+    --bs-nav-tabs-link-hover-border-color: var(--app-border);
+    --bs-nav-tabs-link-active-color:   var(--app-text);
+    --bs-nav-tabs-link-active-bg:      var(--app-panel);
+    --bs-nav-tabs-link-active-border-color: var(--app-border);
+}

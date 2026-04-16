@@ -1,0 +1,107 @@
+// ============================================================
+// NetMon — App shell layout
+// Three-region layout: fixed sidebar + fixed topbar + scrollable content
+// ============================================================
+
+// ── App shell wrapper ────────────────────────────────────────
+.app-shell {
+    display: flex;
+    min-height: 100vh;
+}
+
+// ── Sidebar ──────────────────────────────────────────────────
+.app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: @sidebar-width;
+    z-index: @z-sidebar;
+    display: flex;
+    flex-direction: column;
+    transition: @transition-sidebar;
+    overflow: hidden;
+
+    // Collapsed state (mobile/toggled)
+    &.collapsed {
+        transform: translateX(-@sidebar-width);
+    }
+}
+
+// Mobile overlay behind open sidebar
+.app-sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: @z-overlay;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+
+    &.visible {
+        display: block;
+    }
+}
+
+// ── Main column ──────────────────────────────────────────────
+.app-main {
+    flex: 1;
+    min-width: 0;
+    margin-left: @sidebar-width;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    transition: margin-left @transition-speed @transition-ease;
+
+    &.expanded {
+        margin-left: 0;
+    }
+}
+
+// ── Topbar ───────────────────────────────────────────────────
+.app-topbar {
+    position: sticky;
+    top: 0;
+    z-index: @z-topbar;
+    height: @topbar-height;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+// ── Content area ─────────────────────────────────────────────
+.app-content {
+    flex: 1;
+    padding: 1.5rem;
+    overflow-x: hidden;
+}
+
+// ── Footer ───────────────────────────────────────────────────
+.app-footer {
+    flex-shrink: 0;
+    height: @footer-height;
+    display: flex;
+    align-items: center;
+    border-top: 1px solid var(--app-border);
+    padding: 0 1.5rem;
+    font-size: 0.8rem;
+    color: var(--app-text-muted);
+}
+
+// ── Responsive: collapse sidebar below lg ────────────────────
+@media (max-width: (@sidebar-collapse-breakpoint - 1px)) {
+    .app-sidebar {
+        transform: translateX(-@sidebar-width);
+
+        &.open {
+            transform: translateX(0);
+        }
+    }
+
+    .app-sidebar-overlay.visible {
+        display: block;
+    }
+
+    .app-main {
+        margin-left: 0;
+    }
+}

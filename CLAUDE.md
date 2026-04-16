@@ -5,7 +5,7 @@ NetMon is a modular network monitoring web application.
 
 Stack:
 - Backend: PHP (no heavy framework)
-- Frontend: JavaScript (AJAX), Bootstrap 5, Bootstrap Icons, LESS for Bootstrap customization
+- Frontend: JavaScript (AJAX), Bootstrap 5, Bootstrap Icons, LESS for Bootstrap customization and theming, DataTables for all application tables
 - Database: SQLite (default), MySQL/MariaDB (future)
 - Architecture: Modular, service-based
 
@@ -43,6 +43,11 @@ Stack:
 - Use LESS for Bootstrap customization and custom theme structure
 - Keep JS modular and minimal
 - Keep frontend assets organized so Bootstrap customizations remain maintainable
+- All application styling must be implemented in LESS
+- Build theming so light mode, dark mode, and future themes are first-class supported concerns
+- Do NOT hardcode a single theme into component styling
+- Theme variables/tokens should be structured so new themes can be added without rewriting component styles
+- All application tables should use DataTables unless there is a clear documented reason not to
 
 ---
 
@@ -303,6 +308,7 @@ When implementing new features:
 
 ---
 
+
 ### Implementation Strategy
 
 When adding new features:
@@ -315,6 +321,148 @@ When adding new features:
   - schema
   - services
   - UI
+
+---
+
+## Theme & Styling Strategy
+
+Styling is a platform concern and must be designed for reuse across future applications.
+
+### Core Rules
+
+- All styling must be authored in LESS
+- The theme system must support:
+  - dark theme
+  - light theme
+  - future additional themes
+- Component styles must consume theme variables/tokens instead of embedding fixed colors directly
+- Theme architecture must make it easy to add a new theme without rewriting component-level LESS files
+
+### Reference Assets
+
+- Files under /docs/reference may be used as visual and structural references for styling
+- Reference assets must be adapted into the project's LESS architecture, not copied blindly
+- Existing reference files currently reflect dark-mode styling only; implementation must also define a proper light theme
+
+### Suggested Theme Structure
+
+The styling system should evolve toward:
+
+- shared design tokens / variables
+- reusable component LESS files
+- theme-specific variable overrides
+- minimal JavaScript for theme switching if needed later
+
+### Tables
+
+- All application tables should use DataTables by default
+- DataTables styling must be integrated into the shared theme system so dark/light/future themes remain visually consistent
+- Avoid one-off table styling that bypasses the common theme layer
+
+---
+
+## Reusable Modules Strategy
+
+NetMon will progressively extract **reusable modules** that can be shared across future applications.
+
+Two initial modules are planned:
+
+### Notes Module (Reusable)
+
+Purpose:
+- Allow attaching notes to arbitrary entities (devices, alerts, discovery findings, etc.)
+
+Core design:
+- Notes must be polymorphic:
+  - entity_type (string)
+  - entity_id (int)
+- Notes must include:
+  - author_user_id
+  - content
+  - created_at / updated_at
+
+Rules:
+- Notes are always **non-destructive** (no cascading deletes)
+- Notes must not assume a specific entity type
+- Notes must be attachable to any future domain object
+
+Future considerations:
+- threaded notes
+- visibility (private/public/internal)
+- pinning or highlighting
+
+---
+
+### Notifications Module (Reusable)
+
+Purpose:
+- Provide a unified system for:
+  - in-app notifications
+  - email notifications
+  - SMS notifications (future)
+
+Core concepts:
+- Notification (event)
+- Notification delivery (per channel)
+- Notification channel (email, sms, internal)
+- Notification preference (per user)
+
+Rules:
+- Notifications must be triggered by **domain events** (e.g. alerts), not raw monitoring data
+- Delivery must be decoupled from generation
+- Throttling must be respected (reuse existing alert throttling logic)
+
+Design constraints:
+- Must be usable outside NetMon
+- Must not depend on NetMon-specific models (devices, alerts)
+- Must support multiple channels without branching logic in core code
+- Must be theme-agnostic at the UI layer so future apps can present notifications consistently across themes
+
+---
+
+## Device Detail Page (NetMon-Specific)
+
+The device detail page is the **primary operational view** for a device.
+
+It must evolve into a structured, multi-section page including:
+
+- Identity / overview
+- Current status (derived, not static)
+- Monitoring graphs:
+  - uptime
+  - latency
+- Network structure:
+  - interfaces
+  - addresses
+- Services:
+  - monitored services
+  - current state
+- Activity:
+  - recent checks
+  - related alerts
+- Context:
+  - notes (via Notes module)
+  - discovery / merge hints (future)
+
+Rules:
+- Must rely on historical data (device_checks, service_checks)
+- Must NOT depend solely on summary columns (devices.status)
+- Must remain performant (limit history queries)
+- Must inherit shared theme/component styles rather than defining page-specific hardcoded color schemes
+
+---
+
+## Implementation Order Guidance
+
+When introducing these features:
+
+1. Implement Notes module first (lowest risk, high reuse)
+2. Expand device detail page to consume notes and existing monitoring data
+3. Implement Notifications module UI last (largest scope, depends on alerts system)
+
+Avoid:
+- implementing all modules at once
+- coupling reusable modules to NetMon-specific logic
 
 ---
 
@@ -354,3 +502,7 @@ When adding new features:
 - Installer and uninstall flows should respect the configured APP_URL, which may be a custom local development host such as https://netmon.local
 - Monitoring system must support historical data storage for graphing and reporting (time-series checks)
 - Device-level and service-level checks should be modeled separately to allow flexible monitoring strategies
+- Theme work should adapt reference styling from /docs/reference into reusable LESS files rather than copying raw CSS/HTML directly
+- The first theme implementation must support both dark mode and light mode
+- Future themes should be addable primarily through variable/token overrides
+- DataTables is the default table layer across the application and should be themed consistently with the rest of the UI

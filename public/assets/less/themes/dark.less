@@ -1,0 +1,45 @@
+// ============================================================
+// NetMon — Dark theme token definitions
+// Applied to :root (default theme).
+// All component LESS files consume these via var(--app-*)
+// ============================================================
+
+:root {
+    // Background layers
+    --app-bg:               #0f1115;
+    --app-panel:            #171a21;
+    --app-panel-2:          #1d212b;
+    --app-panel-3:          #252b36;
+    --app-input-bg:         #11151b;
+
+    // Borders
+    --app-border:           #2f3744;
+    --app-border-subtle:    rgba(255, 255, 255, 0.06);
+
+    // Text
+    --app-text:             #e9ecef;
+    --app-text-muted:       #9aa4b2;
+
+    // Brand / accent
+    --app-primary:          #0d6efd;
+    --app-primary-rgb:      13, 110, 253;
+
+    // Navigation states
+    --app-nav-active-bg:    rgba(13, 110, 253, 0.14);
+    --app-nav-active-text:  #ffffff;
+    --app-nav-hover-bg:     rgba(255, 255, 255, 0.04);
+
+    // Structural surfaces
+    --app-sidebar-bg:       rgba(23, 26, 33, 0.92);
+    --app-topbar-bg:        rgba(23, 26, 33, 0.78);
+
+    // Decoration
+    --app-radius:           0.85rem;
+    --app-shadow:           0 0.5rem 1.25rem rgba(0, 0, 0, 0.22);
+    --app-code-color:       #9ec5fe;
+
+    // Bootstrap override bridge tokens
+    --bs-body-bg:           var(--app-bg);
+    --bs-body-color:        var(--app-text);
+    --bs-border-color:      var(--app-border);
+}

@@ -1,6 +1,9 @@
 composer.phar
 /vendor/
 
+# Node — build toolchain deps (never commit)
+node_modules/
+
 # macOS
 .DS_Store
 

@@ -1,6 +1,6 @@
 # Discovery
 
-> **Status (Phase 12):** Subnet scanning, staged findings, and the operator action workflow are implemented. Operators can review each finding and choose to link it to an existing device, create a new device from it, or ignore it — all from the browser. Discovery never automatically creates or modifies devices.
+> **Status (Phase 13):** Subnet scanning, staged findings, and the operator action workflow are implemented. Operators can review each finding and choose to link it to an existing device, create a new device from it, or ignore it — all from the browser. The finding detail page now surfaces **Possible Device Matches** (informational only) based on MAC and hostname signals. Discovery never automatically creates or modifies devices.
 
 ---
 
@@ -354,6 +354,7 @@ app/
 | `findById(int): ?array` | Single finding with job_name, job_subnet, device_name |
 | `linkFindingToDevice(int, int): void` | Set status=matched, matched_device_id=? (UI action path) |
 | `markIgnored(int): void` | Set status=ignored, matched_device_id=NULL |
+| `possibleMatchesForFinding(int): array` | Return active devices that share a strong identity signal with this finding; informational only |
 
 ---
 
@@ -383,6 +384,49 @@ app/
 | No nmap | The scanner uses `exec(ping)` only. nmap would provide OS fingerprinting and port discovery. |
 | Synchronous scan | A /24 takes ~4–5 minutes worst-case (254 hosts × 1 s timeout). A parallel runner (via `proc_open` or forking) would reduce this significantly. |
 | Ignore is one-way | Once a finding is ignored, only a direct SQL update can revert it. A UI unignore action is not yet implemented. |
+
+---
+
+## Possible Device Matches (Suggestions)
+
+The finding detail page (`GET /discovery/{id}`) may display a **Possible Device Matches** card below the actions panel. These suggestions surface active devices that share a strong identity signal with the finding. They are **informational only** — no link or merge is taken automatically.
+
+### How it works
+
+`DiscoveryRepository::possibleMatchesForFinding(int $findingId): array` runs two read-only queries:
+
+1. **MAC address match (strong signal)**
+   If the finding has a non-null `mac_address`, looks for active devices that have a `device_interfaces.mac_address` row with the same value. A MAC match strongly suggests the same physical NIC.
+
+2. **Hostname match via linked findings (weaker signal)**
+   If the finding has a non-null `hostname`, looks for active devices linked (via `matched_device_id`) to any other finding that shares the same hostname. This is heuristic — hostnames can be recycled, are not globally unique, and are not a reliable long-term identity signal.
+
+Results are priority-ordered: MAC matches first, then hostname-only matches for devices not already present. The already-matched device (`finding.matched_device_id`) is excluded from suggestions. Soft-deleted devices are excluded.
+
+Each result row carries:
+- `match_reason` — `'mac'` or `'hostname'`
+- `match_value` — the shared MAC or hostname string
+
+### Signal strength and labelling
+
+| Signal | Badge | Note in UI |
+|--------|-------|------------|
+| MAC match | **MAC match** (yellow/warning) | "strong signal" |
+| Hostname match | **Hostname match** (grey/secondary) | "weaker — not unique" |
+
+### UI behaviour
+
+When `$possibleMatches` is non-empty, the view renders a left-yellow-bordered card at the bottom of the finding detail page. Each suggestion shows: device name (linked to `/devices/{id}`), management address, signal badge, and matched value.
+
+A footer note explains how to act on a suggestion: use the **Link to an existing device** panel above, or visit the device page to initiate a merge.
+
+The card is hidden entirely when there are no suggestions (`if (!empty($possibleMatches))`).
+
+### Rules enforced
+
+- No automatic link, merge, or mutation ever occurs from this feature.
+- The operator must explicitly use the Link or Create device action panels to act.
+- Suggestions reference the actions panel — no separate action button exists on the suggestion card itself.
 
 ---
 

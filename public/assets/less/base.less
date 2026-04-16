@@ -1,0 +1,73 @@
+// ============================================================
+// NetMon — Base / reset styles
+// Applies global defaults after theme tokens are defined.
+// ============================================================
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-size: 0.9rem;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+// Scrollbar styling (Chromium / Edge)
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: var(--app-panel);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--app-border);
+    border-radius: 3px;
+
+    &:hover {
+        background: var(--app-text-muted);
+    }
+}
+
+// Text utilities using app tokens
+.text-app-muted {
+    color: var(--app-text-muted) !important;
+}
+
+// Code / pre
+code,
+pre {
+    color: var(--app-code-color);
+    background-color: var(--app-panel-3);
+    border-radius: calc(var(--app-radius) / 2);
+}
+
+code {
+    padding: 0.15em 0.35em;
+    font-size: 0.85em;
+}
+
+pre code {
+    padding: 0;
+    background: none;
+}
+
+// Horizontal rule
+hr {
+    border-color: var(--app-border);
+    opacity: 1;
+}
+
+// Focus ring uses primary color
+:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: 2px;
+}

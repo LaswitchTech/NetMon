@@ -1,0 +1,32 @@
+// ============================================================
+// NetMon — LESS compile-time constants
+// These are fixed values that do NOT vary between themes.
+// For theme-switchable values, use CSS custom properties
+// defined in themes/dark.less and themes/light.less.
+// ============================================================
+
+// Layout dimensions
+@sidebar-width:        280px;
+@topbar-height:        72px;
+@footer-height:        48px;
+
+// Z-index ladder
+@z-sidebar:            1030;
+@z-topbar:             1020;
+@z-overlay:            1029;
+@z-dropdown:           1050;
+
+// Transitions
+@transition-speed:     0.2s;
+@transition-ease:      ease;
+@transition-sidebar:   transform @transition-speed @transition-ease;
+
+// Breakpoints (match Bootstrap 5)
+@breakpoint-sm:        576px;
+@breakpoint-md:        768px;
+@breakpoint-lg:        992px;
+@breakpoint-xl:        1200px;
+@breakpoint-xxl:       1400px;
+
+// Sidebar mobile breakpoint
+@sidebar-collapse-breakpoint: @breakpoint-lg;

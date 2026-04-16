@@ -83,13 +83,15 @@ These modules are already implemented and live directly under `app/`:
 
 Add-on modules live under `app/Modules/{ModuleName}/` with namespace `App\Modules\{ModuleName}\`.
 
-| Directory | Purpose |
-|---|---|
-| `app/Modules/Setup/` | Installation orchestration — `SetupService` (implemented); web wizard UI *(planned)* |
-| `app/Modules/FileManager/` | Browse, upload, download files *(planned)* |
-| `app/Modules/DatabaseReader/` | Read and query external databases *(planned)* |
-| `app/Modules/Chat/` | Real-time or async messaging *(planned)* |
-| `app/Modules/Reporting/` | Generate and export reports *(planned)* |
+| Directory | Purpose | Status |
+|---|---|---|
+| `app/Modules/Setup/` | Installation orchestration — `SetupService` (implemented); web wizard UI | Partial |
+| `app/Modules/Notes/` | Attach free-text notes to any entity (polymorphic, entity_type + entity_id) | Planned — see [notes-module.md](notes-module.md) |
+| `app/Modules/Notifications/` | User-facing in-app inbox + email delivery; decoupled from alert dispatch | Planned — see [notifications-module.md](notifications-module.md) |
+| `app/Modules/FileManager/` | Browse, upload, download files | Planned |
+| `app/Modules/DatabaseReader/` | Read and query external databases | Planned |
+| `app/Modules/Chat/` | Real-time or async messaging | Planned |
+| `app/Modules/Reporting/` | Generate and export reports | Planned |
 
 Each add-on module follows this internal structure:
 
