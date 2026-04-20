@@ -78,6 +78,7 @@ use App\Monitoring\Pinger;
 use App\Monitoring\TcpChecker;
 use App\Modules\Notifications\Models\NotificationRepository as ModuleNotificationRepository;
 use App\Modules\Notifications\Models\NotificationQueueRepository;
+use App\Modules\Notifications\Models\NotificationPreferenceRepository;
 use App\Modules\Notifications\Services\NotificationService;
 use App\Notifications\LogChannel;
 use App\Notifications\WebhookChannel;
@@ -121,9 +122,10 @@ $tcpChecker  = new TcpChecker();
 // processes the queue asynchronously, decoupling SMTP latency and transient
 // channel failures from the monitoring runner's hot path.
 //
-// Recipient rule (Phase 1 — no preference system yet):
-//   All active users receive notifications for every alert event.
-//   This will be refined by per-user preferences in a future phase.
+// Recipient rule:
+//   All active users are candidates for each alert event.
+//   NotificationService filters per-user per-channel using notification_preferences.
+//   Default when no preference row exists: channel enabled (opt-out model).
 //
 // Dispatch policy:
 //   type='open'     → enqueue to ['in_app', 'email']
@@ -132,7 +134,8 @@ $tcpChecker  = new TcpChecker();
 // ---------------------------------------------------------------------------
 $moduleNotifRepo = new ModuleNotificationRepository($db);
 $queueRepo       = new NotificationQueueRepository($db);
-$notifService    = new NotificationService($moduleNotifRepo, $queueRepo);
+$prefRepo        = new NotificationPreferenceRepository($db);
+$notifService    = new NotificationService($moduleNotifRepo, $queueRepo, $prefRepo);
 
 $userRepo        = new UserRepository($db);
 $activeRecipients = $userRepo->findAllActive();

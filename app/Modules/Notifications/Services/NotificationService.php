@@ -4,6 +4,7 @@ namespace App\Modules\Notifications\Services;
 
 use App\Modules\Notifications\Models\NotificationRepository;
 use App\Modules\Notifications\Models\NotificationQueueRepository;
+use App\Modules\Notifications\Models\NotificationPreferenceRepository;
 
 /**
  * Central dispatch orchestrator for the Notifications module.
@@ -22,18 +23,28 @@ use App\Modules\Notifications\Models\NotificationQueueRepository;
  *   The caller decides when to call dispatch().  Throttle state lives
  *   in the caller's domain (e.g. alerts.last_notified_at for NetMon).
  *   This service does not implement throttling itself.
+ *
+ * Preference enforcement:
+ *   When a NotificationPreferenceRepository is provided, dispatch() checks
+ *   each user's per-channel preference before creating any delivery or queue
+ *   record.  Default when no preference row exists: enabled (opt-out model).
+ *   When the repository is not provided, all channels are enabled for all
+ *   users (backwards-compatible behaviour — same as every row being missing).
  */
 class NotificationService
 {
     private NotificationRepository $repo;
     private NotificationQueueRepository $queueRepo;
+    private ?NotificationPreferenceRepository $prefRepo;
 
     public function __construct(
-        NotificationRepository      $repo,
-        NotificationQueueRepository $queueRepo
+        NotificationRepository             $repo,
+        NotificationQueueRepository        $queueRepo,
+        ?NotificationPreferenceRepository  $prefRepo = null
     ) {
         $this->repo      = $repo;
         $this->queueRepo = $queueRepo;
+        $this->prefRepo  = $prefRepo;
     }
 
     // -------------------------------------------------------------------------
@@ -83,14 +94,26 @@ class NotificationService
         $now = date('Y-m-d H:i:s');
 
         foreach ($recipients as $user) {
+            $userId = (int) $user['id'];
+
             foreach ($channels as $channelName) {
                 if (empty($channelName)) {
                     continue;
                 }
 
+                // Honour per-user channel preference.
+                // Default (no row exists): enabled (opt-out model).
+                // If no preference repository was injected, all channels are
+                // treated as enabled — same as the missing-row default.
+                if ($this->prefRepo !== null
+                    && !$this->prefRepo->isChannelEnabled($userId, $channelName)
+                ) {
+                    continue;
+                }
+
                 $deliveryId = $this->repo->createDelivery([
                     'notification_id' => $notificationId,
-                    'user_id'         => (int) $user['id'],
+                    'user_id'         => $userId,
                     'channel'         => $channelName,
                 ]);
 

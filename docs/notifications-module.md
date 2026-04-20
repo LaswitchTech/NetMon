@@ -263,7 +263,9 @@ Central dispatch orchestrator. Called by application-layer code when a notifiabl
 public function dispatch(array $event, array $recipients, array $channels): void;
 ```
 
-**Constructor:** `__construct(NotificationRepository $repo, NotificationQueueRepository $queueRepo)`
+**Constructor:** `__construct(NotificationRepository $repo, NotificationQueueRepository $queueRepo, ?NotificationPreferenceRepository $prefRepo = null)`
+
+The third argument is optional for backwards compatibility. In production (`scripts/monitor.php`) it is always provided.
 
 Unknown or empty channel names are silently skipped.
 
@@ -275,10 +277,17 @@ dispatch(event, recipients, channels)
     ├─ INSERT module_notifications row → $notificationId
     │
     └─ for each $recipient × $channel:
-           INSERT module_notification_deliveries (status='pending') → $deliveryId
-           INSERT module_notification_queue (delivery_id, channel, available_at=now)
-           // Worker delivers asynchronously
+           check preference: isChannelEnabled(userId, channel)
+               │
+               ├─ disabled → skip (no delivery row, no queue row)
+               │
+               └─ enabled (or no row → default enabled):
+                      INSERT module_notification_deliveries (status='pending') → $deliveryId
+                      INSERT module_notification_queue (delivery_id, channel, available_at=now)
+                      // Worker delivers asynchronously
 ```
+
+**Default when no preference row exists:** channel is enabled. This is the opt-out model — users receive notifications on all channels unless they explicitly disable one.
 
 ---
 
@@ -427,7 +436,8 @@ The full inbox page is no longer linked from the sidebar. It is still accessible
 ```php
 $moduleNotifRepo = new ModuleNotificationRepository($db);
 $queueRepo       = new NotificationQueueRepository($db);
-$notifService    = new NotificationService($moduleNotifRepo, $queueRepo);
+$prefRepo        = new NotificationPreferenceRepository($db);
+$notifService    = new NotificationService($moduleNotifRepo, $queueRepo, $prefRepo);
 ```
 
 `dispatch()` calls enqueue delivery items into `module_notification_queue`.
@@ -464,6 +474,8 @@ $channelRegistry = [
 | Service recovered (alert resolved) | "Service restored: Core Router / HTTPS" |
 
 The throttle (`alerts.last_notified_at`) controls the legacy log/webhook channels — it does not apply to module notification dispatch. The open/reminder distinction is the frequency control for in-app and email.
+
+`dispatch()` filters recipients against `notification_preferences` before creating any delivery row. A user who has disabled the `email` channel will receive an in-app notification only; a user who has disabled both channels receives nothing from this event.
 
 ### Activating email in development
 
@@ -506,7 +518,7 @@ Per-user channel enable/disable flags are stored in the `notification_preference
 
 **UI:** The Profile page (`/profile#notification-preferences`) renders a form with two switches (in-app, email). Submits via `POST /profile/notification-preferences` to `ProfileController::saveNotificationPreferences()`.
 
-**Delivery filtering:** Phase 1 stores preferences but the worker (`scripts/notify.php`) does not yet read them. In a future phase, the worker will call `isChannelEnabled()` before delivering each queue item.
+**Delivery filtering:** Enforced at dispatch time in `NotificationService::dispatch()`. Before creating any delivery row or queue row for a given user/channel pair, the service calls `isChannelEnabled($userId, $channel)`. If the user has disabled that channel, no records are created — the worker never sees them. This keeps the worker simple and prevents stale records from accumulating in the DB for opted-out channels.
 
 ---
 
@@ -516,8 +528,9 @@ Per-user channel enable/disable flags are stored in the `notification_preference
 |------|-------|
 | SMS channel | Schema ready; implementation deferred |
 | ~~Notification preferences~~ | Done — `notification_preferences` table + `NotificationPreferenceRepository` + Profile page UI |
-| Delivery filtering by preference | Worker does not yet check `notification_preferences`; deferred to a future phase |
+| ~~Delivery filtering by preference~~ | Done — enforced at dispatch time in `NotificationService::dispatch()` before any row is created |
 | ~~Async/queued delivery~~ | Done — `module_notification_queue` table + `NotificationQueueRepository` + `scripts/notify.php` worker |
+| Per-event-type preferences | Currently a per-channel toggle only; a per-event-type matrix (e.g. "email only for offline, not for resolved") is deferred |
 | Digest / batching | Group multiple events into one email |
 | Rich HTML email templates | Plain text only for now |
 | Admin delivery report | View of all deliveries across all users and channels |
@@ -547,6 +560,7 @@ Per-user channel enable/disable flags are stored in the `notification_preference
 - [x] `scripts/monitor.php` — enqueues notifications; no channel registration needed
 - [x] `scripts/notify.php` — queue worker with retry back-off; cron-friendly
 - [x] Profile page (`/profile`) — account, notification preferences, API tokens
-- [ ] Delivery filtering by preference in worker
+- [x] Delivery filtering by preference — enforced at dispatch time in `NotificationService::dispatch()`
+- [ ] Per-event-type preference matrix — deferred
 - [ ] SMS channel — deferred
 - [ ] Admin view of all notification deliveries
