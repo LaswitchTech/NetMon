@@ -74,9 +74,18 @@ $router->post('/devices/{id}/merge',      'NetMon\Controllers\DeviceController@m
 
 // Admin area — requires 'admin' permission on all routes.
 // Handler prefix 'Controllers\...' resolves to App\Controllers\... via the Router's qualified-name rule.
-$router->get('/admin',             'Controllers\Admin\AdminController@index',       ['WebAuth', 'WebPermission:admin']);
-$router->get('/admin/permissions', 'Controllers\Admin\AdminController@permissions', ['WebAuth', 'WebPermission:admin']);
-$router->get('/admin/audit',       'Controllers\Admin\AdminController@audit',       ['WebAuth', 'WebPermission:admin']);
+$router->get('/admin',       'Controllers\Admin\AdminController@index', ['WebAuth', 'WebPermission:admin']);
+$router->get('/admin/audit', 'Controllers\Admin\AdminController@audit',  ['WebAuth', 'WebPermission:admin']);
+
+// Admin permissions — full CRUD.
+// NOTE: /admin/permissions/create must be before /admin/permissions/{id} so the
+//       literal "create" segment is not captured as an id.
+$router->get('/admin/permissions',                  'Controllers\Admin\PermissionController@index',      ['WebAuth', 'WebPermission:admin']);
+$router->get('/admin/permissions/create',           'Controllers\Admin\PermissionController@createForm', ['WebAuth', 'WebPermission:admin']);
+$router->post('/admin/permissions',                 'Controllers\Admin\PermissionController@store',      ['WebAuth', 'WebPermission:admin']);
+$router->get('/admin/permissions/{id}/edit',        'Controllers\Admin\PermissionController@editForm',   ['WebAuth', 'WebPermission:admin']);
+$router->post('/admin/permissions/{id}',            'Controllers\Admin\PermissionController@update',     ['WebAuth', 'WebPermission:admin']);
+$router->post('/admin/permissions/{id}/delete',     'Controllers\Admin\PermissionController@delete',     ['WebAuth', 'WebPermission:admin']);
 
 // Admin users — full CRUD + group assignment.
 // NOTE: /admin/users/create must be before /admin/users/{id}/edit to prevent "create" being captured as an id.

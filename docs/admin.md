@@ -37,13 +37,23 @@ The `admin` permission is seeded at install time (see `database/seeds/AdminBoots
 
 ## Routes
 
-### AdminController (landing page, permissions, audit log)
+### AdminController (landing page, audit log)
 
 | Method | Path | Controller method | Description |
 |---|---|---|---|
 | GET | `/admin` | `AdminController::index()` | Admin landing page — summary counts and quick nav |
-| GET | `/admin/permissions` | `AdminController::permissions()` | Permissions list (read-only) |
 | GET | `/admin/audit` | `AdminController::audit()` | Audit log — last 500 entries, DataTable |
+
+### PermissionController (full CRUD)
+
+| Method | Path | Controller method | Description |
+|---|---|---|---|
+| GET | `/admin/permissions` | `PermissionController::index()` | Permissions list with Edit action |
+| GET | `/admin/permissions/create` | `PermissionController::createForm()` | Create permission form |
+| POST | `/admin/permissions` | `PermissionController::store()` | Handle permission create |
+| GET | `/admin/permissions/{id}/edit` | `PermissionController::editForm()` | Edit form + danger zone |
+| POST | `/admin/permissions/{id}` | `PermissionController::update()` | Handle permission update |
+| POST | `/admin/permissions/{id}/delete` | `PermissionController::delete()` | Handle permission delete |
 
 ### UserController (full CRUD + group assignment)
 
@@ -78,12 +88,24 @@ The `admin` permission is seeded at install time (see `database/seeds/AdminBoots
 
 **File:** `app/Controllers/Admin/AdminController.php`
 
-Handles the landing page and permissions list only. Read-only.
+Handles the landing page and audit log. Read-only.
 
 | Method | Route | Data loaded |
 |---|---|---|
 | `index()` | `GET /admin` | Count of users, groups, permissions |
-| `permissions()` | `GET /admin/permissions` | `PermissionRepository::findAll()` with group_count |
+| `audit()` | `GET /admin/audit` | `AuditLogRepository::findRecent(500)` |
+
+### `PermissionController`
+
+**File:** `app/Controllers/Admin/PermissionController.php`
+
+Owns all permission-related admin routes.
+
+Flash messages are stored in `$_SESSION['admin_flash']`.
+
+Private helpers: `validatePermission()`, `ctx()`, `auditLog()`, `flash()`, `popFlash()`.
+
+`ctx()` returns `[$viewsPath, $appName, $displayName, $permissions]`.
 
 ### `UserController`
 
@@ -142,6 +164,41 @@ On success: calls `UserRepository::update()` for name/email, then optionally `Us
 3. If that count is zero → reject with an error flash; do not deactivate.
 
 The guard prevents a state where no active admin can log in.
+
+---
+
+## Permission CRUD Behavior
+
+### Create
+
+`POST /admin/permissions` validates:
+- Code (name) is required
+- Code is max 128 characters
+- Code matches `/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/` — lowercase dot-separated identifiers (e.g. `devices.manage`, `files.manage`). Letters, digits, and underscores within each segment.
+- Code must be unique (checked via `PermissionRepository::isCodeTaken()`)
+- Description is optional, max 255 characters
+
+On validation failure: re-renders the create form with `is-invalid` field states. HTTP 422.
+
+On success: inserts the permission, logs `permission.create`, sets a flash message, redirects to `/admin/permissions`.
+
+### Edit
+
+`POST /admin/permissions/{id}` validates the same rules as create, excluding the current permission's own ID from the uniqueness check.
+
+On success: updates the permission, logs `permission.update`, sets a flash message, redirects back to the edit page.
+
+### Delete
+
+`POST /admin/permissions/{id}/delete`
+
+**Deletion guard:** `PermissionRepository::isInUse(int $id)` checks whether any row in `group_permissions` references this permission. If yes, deletion is refused and an error flash is displayed. The user is redirected to `/admin/permissions`.
+
+The delete button in the edit view is also hidden (replaced with an informational message) when `group_count > 0`, providing a clear UI-level signal before the form is submitted.
+
+**No cascading delete** is attempted — the FK constraint on `group_permissions` enforces referential integrity at the DB level as a safety net if the guard is bypassed.
+
+On success: deletes the permission, logs `permission.delete`, sets a flash message, redirects to `/admin/permissions`.
 
 ---
 
@@ -280,10 +337,15 @@ The check is case-insensitive via `strtolower()` to guard against name collision
 
 **File:** `app/Models/PermissionRepository.php`
 
-| Method | Returns |
-|---|---|
-| `findAll()` | All permissions with `group_count` subquery aggregate |
-| `findById(int $id)` | Single permission row |
+| Method | Returns | Description |
+|---|---|---|
+| `findAll()` | `array[]` | All permissions with `group_count` subquery aggregate |
+| `findById(int $id)` | `?array` | Single permission row or null |
+| `isCodeTaken(string $name, ?int $excludeId)` | `bool` | Uniqueness check for create/edit |
+| `isInUse(int $id)` | `bool` | True if any group holds this permission |
+| `create(array $data)` | `int` | Insert permission; returns new id |
+| `update(int $id, array $data)` | `void` | Update code and description |
+| `delete(int $id)` | `void` | Delete permission — callers must check `isInUse()` first |
 
 ---
 
@@ -299,7 +361,9 @@ The check is case-insensitive via `strtolower()` to guard against name collision
 | `app/Views/admin/groups.php` | `GET /admin/groups` | DataTable: name, description, counts, actions (edit/delete) |
 | `app/Views/admin/group-create.php` | `GET /admin/groups/create` | Create form with inline validation |
 | `app/Views/admin/group-edit.php` | `GET /admin/groups/{id}/edit` | Unified form: name/description + permission checkboxes (grouped by prefix) + read-only members + danger zone |
-| `app/Views/admin/permissions.php` | `GET /admin/permissions` | DataTable: name (code), description, group_count |
+| `app/Views/admin/permissions.php` | `GET /admin/permissions` | DataTable: code, description, group_count, actions (edit) |
+| `app/Views/admin/permission-create.php` | `GET /admin/permissions/create` | Create form: code, description |
+| `app/Views/admin/permission-edit.php` | `GET /admin/permissions/{id}/edit` | Edit form + assigned groups summary + danger zone (delete, guarded) |
 | `app/Views/admin/audit.php` | `GET /admin/audit` | DataTable: timestamp, actor, action, entity, meta summary |
 
 All views use the shared layout and `NetMon.dt.init()` for DataTables where applicable.
@@ -392,6 +456,9 @@ The admin audit log is an append-only record of administrative actions. It is st
 | `group.create` | `GroupController::store()` | `group` | name, description |
 | `group.update` | `GroupController::update()` | `group` | name, description, permission_count, permission_ids |
 | `group.delete` | `GroupController::delete()` | `group` | name |
+| `permission.create` | `PermissionController::store()` | `permission` | name |
+| `permission.update` | `PermissionController::update()` | `permission` | name |
+| `permission.delete` | `PermissionController::delete()` | `permission` | name |
 
 Group membership changes (`UserController::update()` — `POST /admin/users/{id}`) are **not** logged in this phase. See Deferred section.
 
@@ -438,7 +505,7 @@ To add new entity types, follow the same pattern — `entity_type` is a free-for
 
 ## What Is Implemented
 
-- [x] `/admin`, `/admin/permissions` — read-only
+- [x] `/admin` — read-only landing page
 - [x] `/admin/audit` — audit log DataTable (last 500 entries, actor join, meta summary)
 - [x] `AuditLogRepository::log()` / `findRecent()` — append-only, fail-silently in controllers
 - [x] `/admin/users` — list with Create / Edit Account / Edit Groups / Activate / Deactivate actions
@@ -458,7 +525,11 @@ To add new entity types, follow the same pattern — `entity_type` is a free-for
 - [x] `WebPermission` middleware for HTML-friendly permission enforcement
 - [x] `GroupController` with create/edit/delete + system group guard
 - [x] `GroupRepository` — full read/write + cascade-delete awareness
-- [x] `PermissionRepository` and `UserRepository`
+- [x] `/admin/permissions` — full CRUD (create, edit, delete) with deletion guard
+- [x] `PermissionController` with create/edit/delete + in-use guard
+- [x] `PermissionRepository` — full read/write + isCodeTaken + isInUse
+- [x] Migration 0028 — adds `created_at` / `updated_at` to permissions table (backfilled)
+- [x] `UserRepository`
 - [x] Sidebar Administration section (conditional on `admin` permission)
 - [x] Admin stat cards with theme-consistent styling
 - [x] Flash messages via `$_SESSION['admin_flash']`
@@ -469,7 +540,7 @@ To add new entity types, follow the same pattern — `entity_type` is a free-for
 
 | Item | Notes |
 |---|---|
-| Create / edit permissions | New permission codes are currently seeded only, not UI-managed |
+| Permission: split delete guard per-group | Currently only blocks if in use anywhere; future may allow inspecting which groups hold it |
 | Password reset (admin-initiated) | No reset token flow yet (admin sets password directly from edit-account) |
 | Session invalidation on membership change | Auth changes take effect at next login/page load |
 | Audit log: group membership changes | `user.groups_update` not yet logged (group assignment via `POST /admin/users/{id}`) |
