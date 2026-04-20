@@ -19,6 +19,9 @@ use App\Core\Router;
 use App\Core\SQLiteDriver;
 use App\Models\TokenRepository;
 use App\Models\UserRepository;
+use App\Modules\Notifications\Models\NotificationRepository as ModuleNotificationRepository;
+use App\Modules\Notifications\Models\NotificationQueueRepository;
+use App\Modules\Notifications\Services\NotificationService;
 use App\Modules\Setup\Controllers\SetupController;
 
 // ---------------------------------------------------------------------------
@@ -146,6 +149,16 @@ $gate       = new Gate($container->get('db'));
 $container->set('auth',   new AuthService(new LocalAuthProvider($userRepo), $authConfig));
 $container->set('gate',   $gate);
 $container->set('tokens', new TokenService($tokenRepo, $userRepo, $gate));
+
+// Notifications module — reusable in-app inbox service
+// NotificationService is registered here so it is available to web controllers
+// (inbox reads, dispatch for future web-triggered events, etc.).
+// Channel delivery is handled asynchronously by the worker (scripts/notify.php);
+// no channel instances are needed in the web process.
+$moduleNotifRepo = new ModuleNotificationRepository($container->get('db'));
+$queueRepo       = new NotificationQueueRepository($container->get('db'));
+$notifService    = new NotificationService($moduleNotifRepo, $queueRepo);
+$container->set('notifications', $notifService);
 
 // ---------------------------------------------------------------------------
 // Routing

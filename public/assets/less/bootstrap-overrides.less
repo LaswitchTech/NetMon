@@ -9,10 +9,29 @@
     --bs-card-bg:                var(--app-panel);
     --bs-card-border-color:      var(--app-border);
     --bs-card-cap-bg:            var(--app-panel-2);
+    --bs-card-cap-color:         var(--app-text);   // explicit header text color
     --bs-card-color:             var(--app-text);
+    --bs-card-title-color:       var(--app-text);   // .card-title elements
+    --bs-card-subtitle-color:    var(--app-text-muted);
 
     border-radius: var(--app-radius);
     box-shadow: var(--app-shadow);
+
+    // Ensure card header headings are always on-theme, even when bg-transparent
+    // is applied (which sets header bg = transparent but must not bleed Bootstrap
+    // default text colours through).
+    .card-header {
+        color: var(--app-text);
+
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--app-text);
+        }
+    }
+
+    // .card-title should never inherit a hardcoded Bootstrap color
+    .card-title {
+        color: var(--app-text);
+    }
 }
 
 // ── Navbar ───────────────────────────────────────────────────
@@ -129,4 +148,44 @@
     --bs-nav-tabs-link-active-color:   var(--app-text);
     --bs-nav-tabs-link-active-bg:      var(--app-panel);
     --bs-nav-tabs-link-active-border-color: var(--app-border);
+}
+
+// ── Breadcrumbs ───────────────────────────────────────────────
+.breadcrumb {
+    --bs-breadcrumb-bg:              transparent;
+    --bs-breadcrumb-divider-color:   var(--app-border);
+    --bs-breadcrumb-item-active-color: var(--app-text-muted);
+
+    .breadcrumb-item {
+        color: var(--app-text-muted);
+
+        a {
+            color: var(--app-primary);
+            text-decoration: none;
+
+            &:hover {
+                text-decoration: underline;
+            }
+        }
+
+        &.active {
+            color: var(--app-text-muted);
+        }
+
+        + .breadcrumb-item::before {
+            color: var(--app-border);
+        }
+    }
+}
+
+// ── Links (global default) ────────────────────────────────────
+// Ensures plain <a> elements use the primary token rather than
+// Bootstrap's hardcoded blue, which may not adapt to theme panels.
+a:not([class]) {
+    color: var(--app-primary);
+
+    &:hover {
+        color: var(--app-primary);
+        opacity: 0.85;
+    }
 }

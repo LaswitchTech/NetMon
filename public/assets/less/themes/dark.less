@@ -8,8 +8,8 @@
     // Background layers
     --app-bg:               #0f1115;
     --app-panel:            #171a21;
-    --app-panel-2:          #1d212b;
-    --app-panel-3:          #252b36;
+    --app-panel-2:          #1e2434;   // card headers — cool blue-tinted, clearly distinct from panel
+    --app-panel-3:          #252c3e;   // code blocks, disabled fields, deepest accent
     --app-input-bg:         #11151b;
 
     // Borders
@@ -39,7 +39,17 @@
     --app-code-color:       #9ec5fe;
 
     // Bootstrap override bridge tokens
-    --bs-body-bg:           var(--app-bg);
-    --bs-body-color:        var(--app-text);
-    --bs-border-color:      var(--app-border);
+    --bs-body-bg:              var(--app-bg);
+    --bs-body-color:           var(--app-text);
+    --bs-border-color:         var(--app-border);
+
+    // Bootstrap color-mode tokens — map Bootstrap utility classes to our tokens.
+    // Without these, .text-muted and similar classes use Bootstrap's own defaults
+    // rather than our --app-text-muted token.
+    --bs-secondary-color:      var(--app-text-muted);
+    --bs-tertiary-color:       var(--app-text-muted);
+    --bs-secondary-bg:         var(--app-panel-2);
+    --bs-tertiary-bg:          var(--app-panel-3);
+    --bs-link-color:           var(--app-primary);
+    --bs-link-hover-color:     var(--app-primary);
 }

@@ -123,6 +123,76 @@ Run this manually when needed — it is not automated. VACUUM can take several s
 
 ---
 
+## Development seeds
+
+Seed scripts populate realistic sample data for local development and UI testing.
+They are never run during installation and must never be run against production data.
+
+### Available seeds
+
+| File | Class | Depends on | Purpose |
+|------|-------|------------|---------|
+| `AdminBootstrap.php` | `AdminBootstrap` | — | Creates the default admin user |
+| `DeviceSeed.php` | `DeviceSeed` | — | 3 sample devices (Core Router, Distribution Switch, File Server) |
+| `DiscoverySeed.php` | `DiscoverySeed` | DeviceSeed | 2 discovery jobs + 10 findings (matched/pending/ignored) |
+| `MonitoredServiceSeed.php` | `MonitoredServiceSeed` | DeviceSeed | TCP services per device (SSH, HTTPS, HTTP, SMB, NFS) |
+| `MonitoringDataSeed.php` | `MonitoringDataSeed` | DeviceSeed, MonitoredServiceSeed | 48h device checks, 24h service checks, alerts, notifications |
+
+### Scenario summary
+
+Once all seeds have run, the database represents this scenario:
+
+| Device | Status | Notes |
+|--------|--------|-------|
+| Core Router | Online | Brief 20-min offline blip ~28h ago |
+| Distribution Switch | Online | Two 10-min timeout windows (~12h and ~36h ago) |
+| File Server | Offline | Down for the last 18h; all services down |
+
+**Alerts:**
+- File Server `device_offline` — open, 216 occurrences
+- File Server SSH `service_down` — open
+- File Server SMB `service_down` — open
+- Core Router HTTPS `service_down` — resolved (15-min incident, ~8h ago)
+- Distribution Switch HTTP `service_down` — resolved (10-min incident, ~16h ago)
+
+**Discovery findings:**
+- 3 matched findings (one per device) in the LAN job
+- 1 ignored finding (guest device)
+- 6 pending findings across both jobs
+- `10.0.0.5` (management network) has hostname `fileserver.lan` — viewing it in the UI
+  triggers a hostname-based match suggestion pointing to File Server
+
+### Running seeds
+
+Run all seeds in dependency order (alphabetical ordering is correct by design):
+
+```bash
+php scripts/seed.php
+```
+
+Or run a single seed by class name:
+
+```bash
+php scripts/seed.php DeviceSeed
+php scripts/seed.php MonitoredServiceSeed
+php scripts/seed.php MonitoringDataSeed
+php scripts/seed.php DiscoverySeed
+```
+
+All seeds are **idempotent** — running them more than once skips any data that already exists.
+
+### Re-seeding from scratch
+
+To reset and re-seed the development database:
+
+```bash
+php scripts/uninstall.php   # removes DB and install lock
+php scripts/install.php     # re-runs migrations
+php scripts/seed.php        # re-seeds all data
+```
+
+---
+
 ## Future improvements
 
 | Item | Notes |

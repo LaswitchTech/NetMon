@@ -1,6 +1,6 @@
 # Discovery
 
-> **Status (Phase 13):** Subnet scanning, staged findings, and the operator action workflow are implemented. Operators can review each finding and choose to link it to an existing device, create a new device from it, or ignore it — all from the browser. The finding detail page now surfaces **Possible Device Matches** (informational only) based on MAC and hostname signals. Discovery never automatically creates or modifies devices.
+> **Status (Phase 14+):** Subnet scanning, staged findings, and the operator action workflow are implemented. Operators can review each finding and choose to link it to an existing device, create a new device from it, or ignore it — all from the browser. The finding detail page surfaces **Possible Device Matches** (informational only) based on MAC and hostname signals, and a **Notes section** for operator annotations. Discovery jobs are now fully manageable from the browser (`/discovery/jobs`). Discovery never automatically creates or modifies devices.
 
 ---
 
@@ -20,19 +20,26 @@ Subnet scan → Findings (pending) → Match against known devices → Manual ac
 
 ### 1. Configure a job
 
-Insert a row into `discovery_jobs` (no UI yet — use SQL or a future admin page):
+Manage jobs in the browser at **`/discovery/jobs`**, accessible via the "Manage Jobs" button on the Discovery page.
+
+From the jobs list you can:
+- Create new jobs (`GET /discovery/jobs/create`)
+- Edit existing jobs (`GET /discovery/jobs/{id}/edit`)
+- Delete jobs — with a confirmation modal warning that all findings for the job will also be deleted
+
+| Field | Meaning |
+|-------|---------|
+| `name` | Human-readable label shown in the UI |
+| `subnet` | IPv4 CIDR notation, e.g. `192.168.1.0/24` (validated server-side) |
+| `enabled` | Enabled = include in scheduled scans; Disabled = skip |
+| `last_run_at` | Updated after each scan; Never until first run |
+
+You can also insert directly via SQL if preferred:
 
 ```sql
 INSERT INTO discovery_jobs (name, subnet, enabled, created_at)
 VALUES ('Office LAN', '192.168.1.0/24', 1, datetime('now'));
 ```
-
-| Field | Meaning |
-|-------|---------|
-| `name` | Human-readable label shown in the UI |
-| `subnet` | IPv4 CIDR notation, e.g. `192.168.1.0/24` |
-| `enabled` | `1` = run this job; `0` = skip |
-| `last_run_at` | Updated after each scan; NULL until first run |
 
 ### 2. Run the scanner
 
@@ -329,23 +336,39 @@ scripts/
 
 app/
   NetMon/Controllers/
-    DiscoveryController.php     ← All discovery routes
+    DiscoveryController.php     ← All discovery routes (findings + jobs)
 
   Views/
     discovery/
       index.php                 ← Findings list (GET /discovery)
       show.php                  ← Finding detail + actions (GET /discovery/{id})
       create-device.php         ← Create device form (GET /discovery/{id}/create-device)
+      jobs/
+        index.php               ← Jobs list (GET /discovery/jobs)
+        create.php              ← New job form (GET /discovery/jobs/create)
+        edit.php                ← Edit job form + danger zone (GET /discovery/jobs/{id}/edit)
 ```
 
 ---
 
 ## Repository Methods
 
+### Jobs
+
 | Method | Description |
 |--------|-------------|
-| `findEnabledJobs(): array` | All jobs with enabled=1, sorted by name |
+| `findAllJobs(): array` | All jobs with findings_count, sorted by name |
+| `findJobById(int): ?array` | Single job row or null |
+| `createJob(array): int` | Insert new job; returns new ID |
+| `updateJob(int, array): void` | Update name, subnet, enabled |
+| `deleteJob(int): void` | Delete job; findings removed by CASCADE DELETE |
+| `findEnabledJobs(): array` | All jobs with enabled=1 (CLI scanner path) |
 | `updateJobLastRun(int, string): void` | Stamp last_run_at on completion |
+
+### Findings
+
+| Method | Description |
+|--------|-------------|
 | `saveFinding(array): int` | Upsert by (job_id, ip_address); returns finding ID |
 | `matchFindingToDevice(int, int): void` | Set status=matched, matched_device_id=? (scanner path) |
 | `findAllFindings(int): array` | Recent findings joined with job+device names |
@@ -427,6 +450,23 @@ The card is hidden entirely when there are no suggestions (`if (!empty($possible
 - No automatic link, merge, or mutation ever occurs from this feature.
 - The operator must explicitly use the Link or Create device action panels to act.
 - Suggestions reference the actions panel — no separate action button exists on the suggestion card itself.
+
+---
+
+## Notes on Findings
+
+Operators can attach free-text notes to any discovery finding via the Notes section on the detail page (`GET /discovery/{id}`).
+
+- **Entity type:** `finding`
+- **Routes:** `POST /discovery/{id}/notes`, `POST /discovery/{id}/notes/{noteId}/delete`
+- **Controller methods:** `DiscoveryController::addNote()`, `DiscoveryController::deleteNote()`
+- Notes are author-owned and can only be deleted by their author
+- Notes survive finding deletion: the `notes` table has no FK cascade to `discovery_findings`
+- Rendered via the shared `partials/notes-section.php` partial — consistent with device and alert note sections
+
+Typical use: recording why a finding was ignored, what action was taken, or context about the scanned host.
+
+See [notes-module.md](notes-module.md) for full Notes module documentation.
 
 ---
 

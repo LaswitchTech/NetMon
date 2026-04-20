@@ -5,6 +5,8 @@ namespace App\NetMon\Controllers;
 use App\Core\Controller;
 use App\Models\DeviceRepository;
 use App\Models\DiscoveryRepository;
+use App\Modules\Notes\Models\NoteRepository;
+use App\Modules\Notes\Services\NoteService;
 
 class DiscoveryController extends Controller
 {
@@ -41,6 +43,217 @@ class DiscoveryController extends Controller
     }
 
     // -------------------------------------------------------------------------
+    // Jobs — CRUD
+    // -------------------------------------------------------------------------
+
+    /**
+     * GET /discovery/jobs
+     *
+     * Lists all discovery jobs.
+     */
+    public function jobIndex(array $params = []): void
+    {
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+
+        $pageTitle     = 'Discovery Jobs';
+        $activeSection = 'Discovery';
+
+        $repo = new DiscoveryRepository($this->container->get('db'));
+        $jobs = $repo->findAllJobs();
+
+        $viewsPath = __DIR__ . '/../../Views';
+
+        ob_start();
+        require $viewsPath . '/discovery/jobs/index.php';
+        $content = ob_get_clean();
+
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        require $viewsPath . '/layouts/app.php';
+    }
+
+    /**
+     * GET /discovery/jobs/create
+     *
+     * Renders the create-job form.
+     */
+    public function jobCreateForm(array $params = []): void
+    {
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+
+        $pageTitle     = 'New Discovery Job';
+        $activeSection = 'Discovery';
+
+        $old    = ['name' => '', 'subnet' => '', 'enabled' => true];
+        $errors = [];
+
+        $viewsPath = __DIR__ . '/../../Views';
+
+        ob_start();
+        require $viewsPath . '/discovery/jobs/create.php';
+        $content = ob_get_clean();
+
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        require $viewsPath . '/layouts/app.php';
+    }
+
+    /**
+     * POST /discovery/jobs
+     *
+     * Validates and creates a new discovery job.
+     * On success: redirects to /discovery/jobs.
+     * On failure: re-renders the form with errors.
+     */
+    public function jobStore(array $params = []): void
+    {
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+
+        $name    = trim($_POST['name']   ?? '');
+        $subnet  = trim($_POST['subnet'] ?? '');
+        $enabled = isset($_POST['enabled']);
+
+        $errors = $this->validateJob($name, $subnet);
+
+        if (!empty($errors)) {
+            $pageTitle     = 'New Discovery Job';
+            $activeSection = 'Discovery';
+
+            $old = compact('name', 'subnet', 'enabled');
+
+            $viewsPath = __DIR__ . '/../../Views';
+
+            ob_start();
+            require $viewsPath . '/discovery/jobs/create.php';
+            $content = ob_get_clean();
+
+            http_response_code(422);
+            header('Content-Type: text/html; charset=utf-8');
+            require $viewsPath . '/layouts/app.php';
+            return;
+        }
+
+        $repo = new DiscoveryRepository($this->container->get('db'));
+        $repo->createJob(compact('name', 'subnet', 'enabled'));
+
+        header('Location: /discovery/jobs');
+        exit;
+    }
+
+    /**
+     * GET /discovery/jobs/{id}/edit
+     *
+     * Renders the edit-job form pre-filled with the job's current data.
+     */
+    public function jobEditForm(array $params = []): void
+    {
+        $id   = (int) ($params['id'] ?? 0);
+        $repo = new DiscoveryRepository($this->container->get('db'));
+        $job  = $repo->findJobById($id);
+
+        if ($job === null) {
+            http_response_code(404);
+            echo 'Job not found.';
+            return;
+        }
+
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+
+        $pageTitle     = 'Edit Job — ' . htmlspecialchars($job['name']);
+        $activeSection = 'Discovery';
+
+        $old    = ['name' => $job['name'], 'subnet' => $job['subnet'], 'enabled' => (bool) $job['enabled']];
+        $errors = [];
+
+        $viewsPath = __DIR__ . '/../../Views';
+
+        ob_start();
+        require $viewsPath . '/discovery/jobs/edit.php';
+        $content = ob_get_clean();
+
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        require $viewsPath . '/layouts/app.php';
+    }
+
+    /**
+     * POST /discovery/jobs/{id}
+     *
+     * Validates and updates an existing discovery job.
+     * On success: redirects to /discovery/jobs.
+     * On failure: re-renders the edit form with errors.
+     */
+    public function jobUpdate(array $params = []): void
+    {
+        $id   = (int) ($params['id'] ?? 0);
+        $repo = new DiscoveryRepository($this->container->get('db'));
+        $job  = $repo->findJobById($id);
+
+        if ($job === null) {
+            http_response_code(404);
+            echo 'Job not found.';
+            return;
+        }
+
+        [$user, $permissions, $appName, $displayName] = $this->principal();
+
+        $name    = trim($_POST['name']   ?? '');
+        $subnet  = trim($_POST['subnet'] ?? '');
+        $enabled = isset($_POST['enabled']);
+
+        $errors = $this->validateJob($name, $subnet);
+
+        if (!empty($errors)) {
+            $pageTitle     = 'Edit Job — ' . htmlspecialchars($job['name']);
+            $activeSection = 'Discovery';
+
+            $old = compact('name', 'subnet', 'enabled');
+
+            $viewsPath = __DIR__ . '/../../Views';
+
+            ob_start();
+            require $viewsPath . '/discovery/jobs/edit.php';
+            $content = ob_get_clean();
+
+            http_response_code(422);
+            header('Content-Type: text/html; charset=utf-8');
+            require $viewsPath . '/layouts/app.php';
+            return;
+        }
+
+        $repo->updateJob($id, compact('name', 'subnet', 'enabled'));
+
+        header('Location: /discovery/jobs');
+        exit;
+    }
+
+    /**
+     * POST /discovery/jobs/{id}/delete
+     *
+     * Deletes a discovery job. All findings for this job are removed via
+     * CASCADE DELETE on discovery_findings.job_id.
+     *
+     * Redirects to /discovery/jobs on completion.
+     */
+    public function jobDelete(array $params = []): void
+    {
+        $id   = (int) ($params['id'] ?? 0);
+        $repo = new DiscoveryRepository($this->container->get('db'));
+        $job  = $repo->findJobById($id);
+
+        if ($job === null) {
+            http_response_code(404);
+            echo 'Job not found.';
+            return;
+        }
+
+        $repo->deleteJob($id);
+
+        header('Location: /discovery/jobs');
+        exit;
+    }
+
+    // -------------------------------------------------------------------------
     // Detail
     // -------------------------------------------------------------------------
 
@@ -64,9 +277,12 @@ class DiscoveryController extends Controller
         }
 
         // Load active devices for the "link to device" dropdown.
-        $deviceRepo     = new DeviceRepository($this->container->get('db'));
-        $devices        = $deviceRepo->findAll();
+        $deviceRepo      = new DeviceRepository($this->container->get('db'));
+        $devices         = $deviceRepo->findAll();
         $possibleMatches = $repo->possibleMatchesForFinding($id);
+
+        $noteRepo = new NoteRepository($this->container->get('db'));
+        $notes    = $noteRepo->findByEntity('finding', $id);
 
         [$user, $permissions, $appName, $displayName] = $this->principal();
 
@@ -82,6 +298,79 @@ class DiscoveryController extends Controller
         http_response_code(200);
         header('Content-Type: text/html; charset=utf-8');
         require $viewsPath . '/layouts/app.php';
+    }
+
+    // -------------------------------------------------------------------------
+    // Notes
+    // -------------------------------------------------------------------------
+
+    /**
+     * POST /discovery/{id}/notes
+     *
+     * Adds a note to the discovery finding. Redirects back to /discovery/{id}#notes.
+     */
+    public function addNote(array $params = []): void
+    {
+        $id   = (int) ($params['id'] ?? 0);
+        $repo = new DiscoveryRepository($this->container->get('db'));
+
+        $finding = $repo->findById($id);
+
+        if ($finding === null) {
+            http_response_code(404);
+            echo 'Finding not found.';
+            return;
+        }
+
+        [$user] = $this->principal();
+        $content = $_POST['content'] ?? '';
+
+        $noteRepo = new NoteRepository($this->container->get('db'));
+        $service  = new NoteService($noteRepo);
+
+        try {
+            $service->addNote('finding', $id, (int) $user['id'], $content);
+            header('Location: /discovery/' . $id . '#notes');
+        } catch (\InvalidArgumentException $e) {
+            header('Location: /discovery/' . $id . '?note_error=' . urlencode($e->getMessage()) . '#notes');
+        }
+
+        exit;
+    }
+
+    /**
+     * POST /discovery/{id}/notes/{noteId}/delete
+     *
+     * Deletes a note from the discovery finding (author-only).
+     * Redirects back to /discovery/{id}#notes.
+     */
+    public function deleteNote(array $params = []): void
+    {
+        $id     = (int) ($params['id']     ?? 0);
+        $noteId = (int) ($params['noteId'] ?? 0);
+
+        $repo    = new DiscoveryRepository($this->container->get('db'));
+        $finding = $repo->findById($id);
+
+        if ($finding === null) {
+            http_response_code(404);
+            echo 'Finding not found.';
+            return;
+        }
+
+        [$user] = $this->principal();
+
+        $noteRepo = new NoteRepository($this->container->get('db'));
+        $service  = new NoteService($noteRepo);
+
+        try {
+            $service->removeNote($noteId, (int) $user['id']);
+            header('Location: /discovery/' . $id . '#notes');
+        } catch (\InvalidArgumentException $e) {
+            header('Location: /discovery/' . $id . '?note_error=' . urlencode($e->getMessage()) . '#notes');
+        }
+
+        exit;
     }
 
     // -------------------------------------------------------------------------
@@ -291,6 +580,46 @@ class DiscoveryController extends Controller
             : $user['username'];
 
         return [$user, $permissions, $appName, $displayName];
+    }
+
+    /**
+     * Validate discovery job form input.
+     *
+     * @return array<string, string>  Errors keyed by field name; empty on success.
+     */
+    private function validateJob(string $name, string $subnet): array
+    {
+        $errors = [];
+
+        if ($name === '') {
+            $errors['name'] = 'Job name is required.';
+        } elseif (mb_strlen($name) > 128) {
+            $errors['name'] = 'Job name must be 128 characters or fewer.';
+        }
+
+        if ($subnet === '') {
+            $errors['subnet'] = 'Subnet is required.';
+        } elseif (!$this->isValidCidr($subnet)) {
+            $errors['subnet'] = 'Please enter a valid IPv4 CIDR subnet (e.g. 192.168.1.0/24).';
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Returns true if the value is a valid IPv4 CIDR notation (e.g. 192.168.1.0/24).
+     */
+    private function isValidCidr(string $value): bool
+    {
+        if (!preg_match('/^(.+)\/(\d+)$/', $value, $m)) {
+            return false;
+        }
+
+        $prefix = (int) $m[2];
+
+        return filter_var($m[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
+            && $prefix >= 0
+            && $prefix <= 32;
     }
 
     /**

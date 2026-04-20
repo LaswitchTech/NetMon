@@ -1,0 +1,47 @@
+// ============================================================
+// NetMon — Admin area components
+// ============================================================
+
+// Stat summary card on the admin landing page
+.admin-stat-card {
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    background: var(--app-panel);
+    color: var(--app-text);
+    transition: background @transition-speed @transition-ease,
+                border-color @transition-speed @transition-ease,
+                box-shadow @transition-speed @transition-ease;
+
+    &:hover {
+        background: var(--app-panel-2);
+        border-color: var(--app-primary);
+        box-shadow: 0 0 0 3px fade(@primary, 12%);
+        text-decoration: none;
+    }
+}
+
+.admin-stat-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--app-radius);
+    background: var(--app-primary-subtle);
+    color: var(--app-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+.admin-stat-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--app-text);
+}
+
+.admin-stat-label {
+    font-size: 0.8rem;
+    color: var(--app-text-muted);
+    margin-top: 0.15rem;
+}

@@ -74,6 +74,7 @@ class AdminBootstrap
             ['name' => 'users.edit',    'description' => 'Edit existing users'],
             ['name' => 'users.delete',  'description' => 'Delete users'],
             ['name' => 'api.access',    'description' => 'Use the API with a token'],
+            ['name' => 'files.manage',  'description' => 'Browse, upload, download, and delete files in configured storage roots'],
         ];
 
         foreach ($permissions as $p) {

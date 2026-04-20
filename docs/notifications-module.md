@@ -1,7 +1,9 @@
 # Notifications Module (Reusable)
 
-> **Status:** Planned — not yet implemented.
-> This is a design document. No schema, service, or view exists yet.
+> **Status:** Core module structure, schema, in-app inbox, email channel, async queue, and
+> NetMon monitor integration are all implemented. Dispatch is now asynchronous — monitor.php
+> enqueues items; the worker (scripts/notify.php) delivers them via in_app and email channels.
+> SMS is deferred.
 >
 > Related: [architecture.md](architecture.md) · [notifications.md](notifications.md) · [domain-model.md](domain-model.md)
 
@@ -13,10 +15,10 @@ There are **two separate notification systems** in this codebase. Understanding 
 
 | System | Location | Purpose | Status |
 |--------|----------|---------|--------|
-| **Alert dispatch** | `App\Notifications\` · `notification_history` table | Dispatches monitoring alerts via log/webhook channels. Tightly coupled to `alerts` and `devices`. | Implemented (Phase 7) |
-| **Notifications module** (this doc) | `app/Modules/Notifications/` | General-purpose notification delivery: in-app inbox, email, future SMS. Not tied to alerts or devices. | Planned |
+| **Alert dispatch** | `App\Notifications\` · `notification_history` table | Dispatches monitoring alerts via log/webhook channels. Tightly coupled to `alerts` and `devices`. | Implemented |
+| **Notifications module** (this doc) | `app/Modules/Notifications/` | General-purpose notification delivery: in-app inbox, email, future SMS. Not tied to alerts or devices. | Implemented |
 
-The existing alert dispatch system should remain as-is. This module is a separate, higher-level system that NetMon (and future apps) can use to deliver structured messages to users through multiple channels.
+The existing alert dispatch system remains as-is. This module is a separate, higher-level system that NetMon (and future apps) use to deliver structured messages to users through multiple channels.
 
 ---
 
@@ -25,7 +27,7 @@ The existing alert dispatch system should remain as-is. This module is a separat
 The Notifications module provides a **unified, multi-channel notification delivery system** that:
 
 - Maintains a persistent per-user notification inbox (in-app channel)
-- Delivers notifications via email (SMTP)
+- Delivers notifications via email (SMTP — active when configured)
 - Is designed to support SMS in a future phase
 - Is decoupled from any specific domain model (devices, alerts, etc.)
 - Can be used by any app built on this platform
@@ -46,20 +48,48 @@ The Notifications module provides a **unified, multi-channel notification delive
 
 ```
 app/Modules/Notifications/
+    Controllers/
+        NotificationController.php       ← Inbox page, mark-read, mark-all-read, unread count
     Models/
         NotificationRepository.php       ← Read/write for notifications + deliveries
+        NotificationQueueRepository.php  ← Async delivery queue: enqueue, fetchDue, reschedule, delete
     Services/
-        NotificationService.php          ← Dispatch orchestration
+        NotificationService.php          ← Dispatch orchestration (enqueues items) + inbox helpers
         Channels/
             ChannelInterface.php         ← Contract: deliver one notification to one user
-            InAppChannel.php             ← Persist a delivery record (inbox)
-            EmailChannel.php             ← SMTP delivery
-            SmsChannel.php               ← (future — placeholder only)
+            InAppChannel.php             ← Mark delivery sent (the record IS the inbox item)
+            EmailChannel.php             ← SMTP delivery; skips gracefully if not configured
+            SmtpMailer.php               ← Raw SMTP client (no external libraries)
+
+scripts/
+    notify.php                           ← Queue worker: fetches due items, delivers, retries
 ```
 
 ---
 
 ## Schema
+
+### `module_notification_queue`
+
+One row per pending delivery item.  Created by `NotificationService::dispatch()` (one row per user per channel per notification event) and consumed by the worker (`scripts/notify.php`).
+
+Migration number: **0024**.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | INTEGER PK | No | — | Auto-increment |
+| `delivery_id` | INTEGER FK | No | — | → `module_notification_deliveries.id` CASCADE DELETE |
+| `channel` | VARCHAR(32) | No | — | `in_app`, `email`, `sms` |
+| `attempts` | INTEGER | No | `0` | Number of delivery attempts made so far |
+| `max_attempts` | INTEGER | No | `3` | Maximum attempts before the item is abandoned |
+| `available_at` | VARCHAR(32) | No | — | Earliest datetime the worker should process this item |
+| `created_at` | VARCHAR(32) | No | — | When the queue row was inserted |
+
+**Indexes:**
+- `module_notification_queue_available_at` — primary worker fetch by due time
+- `module_notification_queue_delivery_id` — look up queue rows for a specific delivery
+
+---
 
 ### `module_notifications`
 
@@ -67,20 +97,15 @@ One row per notification event. Stores the content and source context.
 
 Migration number: **0022**.
 
-> The table is prefixed `module_` to avoid collision with any existing app-level `notifications` table.
-
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `id` | INTEGER PK | No | — | Auto-increment |
-| `source_type` | VARCHAR(64) | Yes | NULL | What generated this notification: `alert`, `device`, `system`, or NULL for system-wide messages |
+| `source_type` | VARCHAR(64) | Yes | NULL | What generated this notification: `alert`, `device`, `system`, or NULL |
 | `source_id` | INTEGER | Yes | NULL | The ID of the source entity. Not a FK. NULL for broadcasts or system messages. |
 | `title` | VARCHAR(255) | No | — | Short human-readable subject line |
 | `body` | TEXT | No | — | Full notification body. Plain text. |
-| `data` | TEXT | Yes | NULL | JSON-encoded arbitrary payload for channel-specific rendering (e.g. alert severity, device link) |
+| `data` | TEXT | Yes | NULL | JSON-encoded arbitrary payload |
 | `created_at` | VARCHAR(32) | No | — | When the notification was generated |
-
-**Indexes:**
-- `module_notifications_source (source_type, source_id)` — look up all notifications for a source entity
 
 ---
 
@@ -97,14 +122,10 @@ Migration number: **0023**.
 | `user_id` | INTEGER FK | No | — | → `users.id` CASCADE DELETE |
 | `channel` | VARCHAR(32) | No | — | `in_app`, `email`, `sms` |
 | `status` | VARCHAR(16) | No | `pending` | `pending`, `sent`, `failed`, `skipped` |
-| `read_at` | VARCHAR(32) | Yes | NULL | For `in_app` channel: when the user read/dismissed it. NULL = unread. |
+| `read_at` | VARCHAR(32) | Yes | NULL | For `in_app` channel: when the user read/dismissed it |
 | `sent_at` | VARCHAR(32) | Yes | NULL | When the delivery was attempted |
-| `error` | VARCHAR(255) | Yes | NULL | Error detail if `status = 'failed'` |
+| `error` | VARCHAR(255) | Yes | NULL | Error detail if `status = 'failed'` or reason if `status = 'skipped'` |
 | `created_at` | VARCHAR(32) | No | — | When this delivery record was created |
-
-**Indexes:**
-- `module_notification_deliveries_user_unread (user_id, channel, read_at)` — unread inbox count (hot path)
-- `module_notification_deliveries_notification_id` — all deliveries for one notification
 
 ---
 
@@ -129,7 +150,7 @@ interface ChannelInterface
 }
 ```
 
-Channels never throw. They return `failed` with an `error` string so the dispatcher can record the outcome and continue to other channels.
+Channels **never throw**. They return `failed` with an `error` string so the dispatcher records the outcome and continues to other channels without interruption.
 
 ---
 
@@ -138,35 +159,84 @@ Channels never throw. They return `failed` with an `error` string so the dispatc
 The in-app channel does not send anything externally. It marks the delivery record as `sent` immediately — the record itself IS the notification in the user's inbox.
 
 ```
-deliver() → update delivery.status = 'sent', delivery.sent_at = now
+deliver() → UPDATE delivery SET status='sent', sent_at=now
 ```
 
-The notification appears in the user's inbox as an unread item until `read_at` is set (via the inbox UI).
+The notification appears in the user's inbox as an unread item until `read_at` is set via the inbox UI.
 
 ---
 
 ## EmailChannel
 
-Sends a plaintext (or simple HTML) email via SMTP using PHP's native `mail()` or a thin wrapper. No third-party mailer library.
+Sends a plain-text email via SMTP using `SmtpMailer` (no third-party libraries).
+Configuration is injected at construction time from `config/notifications-module.php`.
 
-**Configuration** (via `config/notifications-module.php` or `config/local.php` override):
+### Delivery outcomes
+
+| Outcome | Condition |
+|---------|-----------|
+| `sent` | SMTP server accepted the message (250 response to DATA body) |
+| `failed` | Connection error, protocol error, or auth failure — error message stored in `delivery.error` (truncated to 255 chars) |
+| `skipped` | Channel not enabled, no SMTP host configured, no from address configured, or recipient has no email address |
+
+### Failure isolation
+
+`EmailChannel::deliver()` wraps the entire send in a `catch (\Throwable $e)` block. Any SMTP failure — connection refused, TLS negotiation error, authentication failure, unexpected server response — is caught, stored in `delivery.error`, and returned as `['status' => 'failed', ...]`. The `NotificationService` dispatch loop continues to the next channel and recipient without interruption. **In-app delivery is never affected by email failure.**
+
+### Configuration
+
+Email is configured in `config/notifications-module.php` (env-driven, overridable via `config/local.php`):
 
 ```php
+// config/local.php — recommended way to activate email in production
 return [
-    'email' => [
-        'enabled'     => false,          // env: NOTIFY_EMAIL_ENABLED
-        'from_address'=> '',             // env: NOTIFY_EMAIL_FROM
-        'from_name'   => 'NetMon',       // env: NOTIFY_EMAIL_FROM_NAME
-        'smtp_host'   => '',             // env: NOTIFY_SMTP_HOST
-        'smtp_port'   => 587,            // env: NOTIFY_SMTP_PORT
-        'smtp_user'   => '',             // env: NOTIFY_SMTP_USER
-        'smtp_pass'   => '',             // env: NOTIFY_SMTP_PASS
-        'smtp_tls'    => true,           // env: NOTIFY_SMTP_TLS
+    'notifications-module' => [
+        'email' => [
+            'enabled'      => true,
+            'from_address' => 'netmon@example.com',
+            'from_name'    => 'NetMon Alerts',
+            'smtp_host'    => 'smtp.example.com',
+            'smtp_port'    => 587,
+            'smtp_user'    => 'netmon@example.com',
+            'smtp_pass'    => 'secret',
+            'encryption'   => 'tls',   // 'tls' | 'ssl' | 'none'
+        ],
     ],
 ];
 ```
 
-The email body uses the `title` as subject and `body` as the plain-text message. A minimal HTML wrapper can be added later.
+Environment variables (all optional — local.php values take precedence):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NOTIFY_EMAIL_ENABLED` | `false` | Master switch |
+| `NOTIFY_EMAIL_FROM` | `` | From address |
+| `NOTIFY_EMAIL_FROM_NAME` | `NetMon` | From display name |
+| `NOTIFY_SMTP_HOST` | `` | SMTP server hostname |
+| `NOTIFY_SMTP_PORT` | `587` | SMTP port |
+| `NOTIFY_SMTP_USER` | `` | SMTP username (blank = anonymous) |
+| `NOTIFY_SMTP_PASS` | `` | SMTP password |
+| `NOTIFY_SMTP_ENCRYPTION` | `tls` | Transport: `tls`, `ssl`, or `none` |
+
+### Transport modes
+
+| `encryption` | Mechanism | Typical port |
+|---|---|---|
+| `tls` | STARTTLS — plain TCP upgraded via STARTTLS command | 587 |
+| `ssl` | SMTPS — TLS socket from first byte (`ssl://host`) | 465 |
+| `none` | Plain SMTP, no encryption — local relay / dev only | 25 |
+
+### SmtpMailer
+
+`SmtpMailer` is a self-contained class in the same `Channels/` directory. It:
+
+- Uses `stream_socket_client()` for all socket operations (no `fsockopen`, no exec)
+- Verifies SSL certificates by default (`verify_peer = true`)
+- Implements AUTH LOGIN (skipped when `smtp_user` is blank)
+- Follows RFC 5321 dot-stuffing on the message body
+- Encodes non-ASCII header values as RFC 2047 UTF-8 base64
+- Has a 10-second per-operation timeout
+- Throws `\RuntimeException` on any failure — caught by `EmailChannel`
 
 ---
 
@@ -174,11 +244,11 @@ The email body uses the `title` as subject and `body` as the plain-text message.
 
 **Class:** `App\Modules\Notifications\Services\NotificationService`
 
-Central dispatch orchestrator. Called by application-layer code (e.g. `scripts/monitor.php` extended, or a future `AlertObserver`).
+Central dispatch orchestrator. Called by application-layer code when a notifiable event occurs.
 
 ```php
 /**
- * Generate a notification and deliver it to the given users via all active channels.
+ * Generate a notification and enqueue delivery to the given users via the given channels.
  *
  * @param array{
  *   source_type: string|null,
@@ -187,37 +257,91 @@ Central dispatch orchestrator. Called by application-layer code (e.g. `scripts/m
  *   body:        string,
  *   data:        array
  * } $event
- * @param array[] $recipients  Each entry: user row from UserRepository
+ * @param array[] $recipients  Each entry: user row from UserRepository (must include 'id')
  * @param string[] $channels   e.g. ['in_app', 'email']
  */
 public function dispatch(array $event, array $recipients, array $channels): void;
-
-/**
- * Return unread in_app deliveries for a user (for the inbox UI).
- */
-public function unreadForUser(int $userId, int $limit = 50): array;
-
-/**
- * Mark a delivery as read.
- */
-public function markRead(int $deliveryId): void;
 ```
 
-### Dispatch flow
+**Constructor:** `__construct(NotificationRepository $repo, NotificationQueueRepository $queueRepo)`
+
+Unknown or empty channel names are silently skipped.
+
+### Dispatch flow (async)
 
 ```
 dispatch(event, recipients, channels)
     │
     ├─ INSERT module_notifications row → $notificationId
     │
-    └─ for each $recipient:
-           for each $channel:
-               INSERT module_notification_deliveries (status='pending') → $deliveryId
-               $result = Channel::deliver(notification, user, delivery)
-               UPDATE module_notification_deliveries SET status=$result.status, ...
+    └─ for each $recipient × $channel:
+           INSERT module_notification_deliveries (status='pending') → $deliveryId
+           INSERT module_notification_queue (delivery_id, channel, available_at=now)
+           // Worker delivers asynchronously
 ```
 
-Delivery is synchronous in Phase 1. Async delivery (via a queue or background job) is a future improvement.
+---
+
+## Queue Worker (`scripts/notify.php`)
+
+Invoked from cron (typically every minute). Each run processes all items in `module_notification_queue` where `available_at <= now`.
+
+### Cron schedule
+
+```
+* * * * * php /path/to/scripts/notify.php >> /path/to/storage/logs/notify.log 2>&1
+```
+
+### Worker flow
+
+```
+fetchDue(now)
+    │
+    └─ for each queue item:
+           load delivery row (+ notification JOIN)
+           load user row
+           look up channel by name in registry
+           if channel not registered → delete queue row, skip
+           channel->deliver(notification, user, delivery)
+               │
+               ├─ sent / skipped → delete queue row
+               │
+               └─ failed:
+                    new_attempts = attempts + 1
+                    if new_attempts < max_attempts:
+                        reschedule (available_at = now + new_attempts × 60s)
+                    else:
+                        delete queue row (delivery already marked failed)
+```
+
+### Retry back-off
+
+| Failure | Delay before retry |
+|---------|-------------------|
+| 1st | 60 s |
+| 2nd | 120 s |
+| 3rd (exhausted, default max=3) | abandoned |
+
+### Usage
+
+```bash
+php scripts/notify.php            # process all due queue items
+php scripts/notify.php --verbose  # show per-item detail
+php scripts/notify.php --dry-run  # fetch due items but do not deliver
+```
+
+---
+
+## NotificationQueueRepository
+
+**Class:** `App\Modules\Notifications\Models\NotificationQueueRepository`
+
+| Method | Description |
+|--------|-------------|
+| `enqueue(int $deliveryId, string $channel, string $availableAt, int $maxAttempts = 3): int` | Insert a new queue item; return new ID |
+| `fetchDue(string $now, int $limit = 50): array` | All items where `available_at <= now` and `attempts < max_attempts`, ordered by `available_at` ASC |
+| `reschedule(int $id, int $attempts, string $availableAt): void` | Update `attempts` and `available_at` on a failed item for retry |
+| `delete(int $id): void` | Remove a queue item (after successful delivery, skip, or exhaustion) |
 
 ---
 
@@ -228,101 +352,201 @@ Delivery is synchronous in Phase 1. Async delivery (via a queue or background jo
 | Method | Description |
 |--------|-------------|
 | `createNotification(array $data): int` | Insert module_notifications row; return ID |
-| `createDelivery(array $data): int` | Insert module_notification_deliveries row; return ID |
-| `updateDelivery(int $id, array $fields): void` | Update status/sent_at/error on a delivery row |
-| `findUnreadByUser(int $userId, int $limit): array` | Unread in_app deliveries with notification content JOINed |
-| `countUnreadByUser(int $userId): int` | Unread badge count for the UI |
-| `markRead(int $deliveryId): void` | Set read_at = now on an in_app delivery |
-| `findBySource(string $type, int $id): array` | All notifications for a source entity |
+| `createDelivery(array $data): int` | Insert module_notification_deliveries row (status='pending'); return ID |
+| `updateDelivery(int $id, array $fields): void` | Update any subset of status/sent_at/read_at/error on a delivery row |
+| `findDeliveryById(int $id): ?array` | Single delivery row with notification content JOINed; null if not found |
+| `findByUser(int $userId, int $limit): array` | All sent in_app deliveries (read + unread) for a user, newest first |
+| `findUnreadByUser(int $userId, int $limit): array` | Unread in_app deliveries for a user, newest first |
+| `countUnreadByUser(int $userId): int` | Unread badge count (hot path — hit on every page load) |
+| `markRead(int $deliveryId): void` | Set read_at = now; guarded by `read_at IS NULL` (idempotent) |
+| `markAllReadByUser(int $userId): void` | Set read_at = now on all unread in_app deliveries for a user |
+| `findBySource(string $type, int $id): array` | All notifications for a source entity (e.g. all generated by alert #3) |
 
 ---
 
-## NetMon Integration Plan
+## Browser UI — Notification Inbox
 
-### How NetMon uses this module
-
-NetMon's monitoring runner currently handles its own notification dispatch inline in `scripts/monitor.php`. The long-term design is:
-
-1. **Keep existing `App\Notifications\`** for the log and webhook channels — these are infrastructure-level sinks, not user-facing notifications.
-2. **Add `NotificationService::dispatch()`** calls alongside the existing dispatch logic for user-facing channels (in-app inbox + email).
-
-This means the alert notification block in `monitor.php` would gain an additional call:
+### Routes
 
 ```php
-// Existing: log/webhook dispatch (unchanged)
-foreach ($channels as $channel) {
-    $channel->send($type, $alert, $device);
+GET  /notifications               → NotificationController@index       [WebAuth]
+POST /notifications/read-all      → NotificationController@markAllRead [WebAuth]
+POST /notifications/{id}/read     → NotificationController@markRead    [WebAuth]
+GET  /api/notifications/count     → NotificationController@unreadCount [SessionAuth]
+GET  /api/notifications/recent    → NotificationController@recent      [SessionAuth]
+```
+
+### Topbar bell dropdown (primary UX)
+
+The bell icon in the topbar is a Bootstrap dropdown button. When opened, it fetches `/api/notifications/recent` and renders the 10 most recent notifications in a panel.
+
+**`GET /api/notifications/recent`** — Response:
+```json
+{
+  "notifications": [
+    {
+      "id": 42,
+      "title": "Device offline: Router A",
+      "body":  "Router A (192.168.1.1) failed its reachability check.",
+      "source_type": "alert",
+      "created_at": "2026-04-19 14:00:00",
+      "is_unread": true
+    }
+  ],
+  "unread_count": 3
 }
+```
 
-// New: user-facing notification (added)
-$notificationService->dispatch(
-    [
-        'source_type' => 'alert',
-        'source_id'   => $alert['id'],
-        'title'       => "Device offline: {$device['name']}",
-        'body'        => "...",
-        'data'        => ['alert_id' => $alert['id'], 'device_id' => $device['id']],
+**Panel behaviour:**
+- Unread items show a blue dot and the title at full opacity.
+- Hovering an unread item reveals a checkmark "mark as read" button.
+- Clicking it POSTs to `/notifications/{id}/read` with `Accept: application/json` — the controller returns `{"success": true, "unread_count": N}` and the panel updates in-place.
+- "Mark all read" button (shown when unread > 0) POSTs to `/notifications/read-all` with `Accept: application/json` — returns `{"success": true, "unread_count": 0}`.
+- A "View all notifications" link at the bottom opens the full inbox page.
+- Unread badge in the topbar is updated live on every page load and after every mark-read action.
+
+**Dual response mode for mark actions:**
+`markRead()` and `markAllRead()` check the `Accept` header:
+- `Accept: application/json` → JSON response (used by the dropdown)
+- otherwise → `302 Location: /notifications` (used by the full inbox page form)
+
+### Full inbox page (`GET /notifications`)
+
+Renders all in_app deliveries for the current user (read + unread, newest first, limit 100).
+
+Each card shows title, body, source badge, timestamp, and a "Mark read" button for unread items. The header shows unread count and a "Mark all as read" button.
+
+The full inbox page is no longer linked from the sidebar. It is still accessible via the "View all notifications" link at the bottom of the topbar dropdown, and at the direct URL `/notifications`.
+
+---
+
+## NetMon Integration
+
+### Wiring (`scripts/monitor.php`)
+
+```php
+$moduleNotifRepo = new ModuleNotificationRepository($db);
+$queueRepo       = new NotificationQueueRepository($db);
+$notifService    = new NotificationService($moduleNotifRepo, $queueRepo);
+```
+
+`dispatch()` calls enqueue delivery items into `module_notification_queue`.
+Channel instances live only in `scripts/notify.php` (the worker).
+
+### Wiring (`scripts/notify.php`)
+
+```php
+$moduleNotifRepo = new ModuleNotificationRepository($db);
+$queueRepo       = new NotificationQueueRepository($db);
+$notifModuleConfig = Config::load('notifications-module');
+
+$channelRegistry = [
+    'in_app' => new InAppChannel($moduleNotifRepo),
+    'email'  => new EmailChannel($moduleNotifRepo, $notifModuleConfig['email'] ?? []),
+];
+```
+
+### Dispatch policy
+
+| Event | Channels | Dispatch condition |
+|-------|----------|-------------------|
+| Alert opened (`type='open'`) | `['in_app', 'email']` | First time this condition is detected |
+| Alert re-confirmed (`type='reminder'`) | — | **Skipped** — no dispatch to avoid inbox/email flooding |
+| Alert resolved | `['in_app', 'email']` | When device/service recovers |
+
+### Events that dispatch
+
+| Event | Title example |
+|-------|--------------|
+| Device offline (alert opened) | "Device offline: File Server" |
+| Device recovered (alert resolved) | "Device recovered: File Server" |
+| Service down (alert opened) | "Service down: Core Router / HTTPS" |
+| Service recovered (alert resolved) | "Service restored: Core Router / HTTPS" |
+
+The throttle (`alerts.last_notified_at`) controls the legacy log/webhook channels — it does not apply to module notification dispatch. The open/reminder distinction is the frequency control for in-app and email.
+
+### Activating email in development
+
+Add to `config/local.php`:
+
+```php
+return [
+    'database' => [ 'driver' => 'sqlite' ],
+    'notifications-module' => [
+        'email' => [
+            'enabled'      => true,
+            'from_address' => 'netmon@localhost',
+            'from_name'    => 'NetMon',
+            'smtp_host'    => 'localhost',
+            'smtp_port'    => 1025,    // e.g. Mailpit or Mailhog
+            'smtp_user'    => '',
+            'smtp_pass'    => '',
+            'encryption'   => 'none',
+        ],
     ],
-    $adminRecipients,   // fetched from UserRepository once per monitor run
-    ['in_app', 'email']
-);
+];
 ```
-
-The throttle is still controlled by `alerts.last_notified_at` — not by this module.
-
-### User-facing notification inbox
-
-Once the module exists, a simple inbox UI can be added:
-
-```
-GET /notifications        — user's unread + recent notifications
-POST /notifications/{id}/read  — mark one as read
-```
-
-An unread count badge in the navigation bar header would call `countUnreadByUser($userId)` and be updated via AJAX or on page load.
 
 ---
 
-## Notification Preferences (Future)
+## Notification Preferences
 
-Phase 1 delivers to all provided recipients on all specified channels. A future phase adds per-user, per-channel opt-out:
+Per-user channel enable/disable flags are stored in the `notification_preferences` table (migration 0025).
 
-```sql
--- Future table (not part of Phase 1)
-module_notification_preferences
-  user_id     INTEGER FK
-  channel     VARCHAR(32)
-  event_type  VARCHAR(64)   -- 'alert.open', 'alert.resolved', etc.
-  enabled     INTEGER       -- 1 = receive, 0 = opt-out
-```
+**Schema:** `(user_id, channel)` composite PK — one row per user per channel. Missing row = enabled (opt-out model).
 
-The `NotificationService::dispatch()` signature should be written so that adding preference checks is an internal change — callers do not need to change.
+**Repository:** `App\Modules\Notifications\Models\NotificationPreferenceRepository`
+
+| Method | Description |
+|--------|-------------|
+| `getAllForUser(int $userId): array` | Returns `['in_app' => bool, 'email' => bool]`; missing rows default to `true` |
+| `isChannelEnabled(int $userId, string $channel): bool` | Single-channel check; default `true` |
+| `setChannelEnabled(int $userId, string $channel, bool $enabled): void` | UPSERT for one channel |
+| `saveAllForUser(int $userId, array $prefs): void` | UPSERT for multiple channels at once |
+
+**UI:** The Profile page (`/profile#notification-preferences`) renders a form with two switches (in-app, email). Submits via `POST /profile/notification-preferences` to `ProfileController::saveNotificationPreferences()`.
+
+**Delivery filtering:** Phase 1 stores preferences but the worker (`scripts/notify.php`) does not yet read them. In a future phase, the worker will call `isChannelEnabled()` before delivering each queue item.
 
 ---
 
-## What Is NOT in Scope for Phase 1
+## What Remains
 
-- Async/queued delivery
-- Notification preferences (opt-in/opt-out per user)
-- SMS channel (schema is ready; implementation deferred)
-- Digest / batching (group multiple events into one email)
-- Rich HTML email templates
-- Notification read state for email (open tracking)
-- Admin view of all notification deliveries
+| Item | Notes |
+|------|-------|
+| SMS channel | Schema ready; implementation deferred |
+| ~~Notification preferences~~ | Done — `notification_preferences` table + `NotificationPreferenceRepository` + Profile page UI |
+| Delivery filtering by preference | Worker does not yet check `notification_preferences`; deferred to a future phase |
+| ~~Async/queued delivery~~ | Done — `module_notification_queue` table + `NotificationQueueRepository` + `scripts/notify.php` worker |
+| Digest / batching | Group multiple events into one email |
+| Rich HTML email templates | Plain text only for now |
+| Admin delivery report | View of all deliveries across all users and channels |
+| Email read tracking | Open-pixel tracking not planned; out of scope |
 
 ---
 
 ## Implementation Checklist
 
-When implementing this module:
-
-- [ ] Migration `0022_create_module_notifications_table.php`
-- [ ] Migration `0023_create_module_notification_deliveries_table.php`
-- [ ] `app/Modules/Notifications/Services/Channels/ChannelInterface.php`
-- [ ] `app/Modules/Notifications/Services/Channels/InAppChannel.php`
-- [ ] `app/Modules/Notifications/Services/Channels/EmailChannel.php`
-- [ ] `app/Modules/Notifications/Services/NotificationService.php`
-- [ ] `app/Modules/Notifications/Models/NotificationRepository.php`
-- [ ] Register `NotificationService` in `public/index.php` container
-- [ ] Route: `GET /notifications`, `POST /notifications/{id}/read`
-- [ ] Update `docs/notifications.md` to reference this module
+- [x] Migration `0022_create_module_notifications_table.php`
+- [x] Migration `0023_create_module_notification_deliveries_table.php`
+- [x] Migration `0024_create_module_notification_queue_table.php`
+- [x] Migration `0025_create_notification_preferences_table.php`
+- [x] `app/Modules/Notifications/Services/Channels/ChannelInterface.php`
+- [x] `app/Modules/Notifications/Services/Channels/InAppChannel.php`
+- [x] `app/Modules/Notifications/Services/Channels/SmtpMailer.php` — raw SMTP client
+- [x] `app/Modules/Notifications/Services/Channels/EmailChannel.php` — full implementation
+- [x] `config/notifications-module.php` — email/SMTP configuration
+- [x] `app/Modules/Notifications/Models/NotificationRepository.php`
+- [x] `app/Modules/Notifications/Models/NotificationPreferenceRepository.php` — per-user channel prefs
+- [x] `app/Modules/Notifications/Models/NotificationQueueRepository.php` — queue CRUD
+- [x] `app/Modules/Notifications/Services/NotificationService.php` — async dispatch (enqueues items)
+- [x] `app/Modules/Notifications/Controllers/NotificationController.php` — inbox + recent() + AJAX mark-read
+- [x] `app/Views/notifications/index.php` — full inbox page (view-all fallback)
+- [x] Topbar bell — Bootstrap dropdown with AJAX recent panel; mark-read in-place
+- [x] Routes: /notifications, /api/notifications/count, /api/notifications/recent
+- [x] `scripts/monitor.php` — enqueues notifications; no channel registration needed
+- [x] `scripts/notify.php` — queue worker with retry back-off; cron-friendly
+- [x] Profile page (`/profile`) — account, notification preferences, API tokens
+- [ ] Delivery filtering by preference in worker
+- [ ] SMS channel — deferred
+- [ ] Admin view of all notification deliveries

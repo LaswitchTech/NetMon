@@ -364,6 +364,280 @@ class DeviceRepository
     }
 
     // -------------------------------------------------------------------------
+    // Interface / Address — Read helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Find a single interface by ID (regardless of which device it belongs to).
+     *
+     * Returns null if the interface does not exist.
+     *
+     * @return array{id: int, device_id: int, name: string, mac_address: string|null, is_management: int, description: string|null, created_at: string}|null
+     */
+    public function findInterfaceById(int $id): ?array
+    {
+        return $this->db->fetchOne(
+            "SELECT id, device_id, name, mac_address, is_management, description, created_at
+             FROM   device_interfaces
+             WHERE  id = ?",
+            [$id]
+        );
+    }
+
+    /**
+     * Find a single address by ID.
+     *
+     * Returns null if the address does not exist.
+     *
+     * @return array{id: int, interface_id: int, address: string, family: string, is_primary: int, created_at: string}|null
+     */
+    public function findAddressById(int $id): ?array
+    {
+        return $this->db->fetchOne(
+            "SELECT id, interface_id, address, family, is_primary, created_at
+             FROM   device_addresses
+             WHERE  id = ?",
+            [$id]
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Interface / Address — Write
+    // -------------------------------------------------------------------------
+
+    /**
+     * Create a new interface for a device.
+     *
+     * Integrity rules:
+     *   - If is_management = 1, the device must not already have a management interface.
+     *     Throws \RuntimeException if the constraint is violated.
+     *
+     * @param  int   $deviceId
+     * @param  array{name: string, mac_address?: string|null, is_management?: int, description?: string|null} $data
+     * @return int   New interface ID
+     * @throws \RuntimeException
+     */
+    public function createInterface(int $deviceId, array $data): int
+    {
+        $isManagement = (int) ($data['is_management'] ?? 0);
+
+        if ($isManagement) {
+            $existing = $this->db->fetchOne(
+                "SELECT id FROM device_interfaces WHERE device_id = ? AND is_management = 1 LIMIT 1",
+                [$deviceId]
+            );
+            if ($existing !== null) {
+                throw new \RuntimeException('This device already has a management interface.');
+            }
+        }
+
+        $now        = date('Y-m-d H:i:s');
+        $name       = trim($data['name']);
+        $mac        = isset($data['mac_address']) && trim($data['mac_address']) !== ''
+                        ? trim($data['mac_address'])
+                        : null;
+        $desc       = isset($data['description']) && trim($data['description']) !== ''
+                        ? trim($data['description'])
+                        : null;
+
+        $this->db->execute(
+            "INSERT INTO device_interfaces (device_id, name, mac_address, is_management, description, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            [$deviceId, $name, $mac, $isManagement, $desc, $now]
+        );
+
+        return (int) $this->db->lastInsertId();
+    }
+
+    /**
+     * Update an existing interface.
+     *
+     * Integrity rules:
+     *   - If setting is_management = 1, no other management interface may exist on the same device
+     *     (the interface being updated is excluded from the check).
+     *
+     * @param  int   $interfaceId
+     * @param  array{name: string, mac_address?: string|null, is_management?: int, description?: string|null} $data
+     * @throws \RuntimeException
+     */
+    public function updateInterface(int $interfaceId, array $data): void
+    {
+        $iface        = $this->findInterfaceById($interfaceId);
+        $isManagement = (int) ($data['is_management'] ?? 0);
+
+        if ($isManagement && !$iface['is_management']) {
+            // Promoting to management — ensure no other management interface exists.
+            $existing = $this->db->fetchOne(
+                "SELECT id FROM device_interfaces
+                 WHERE  device_id = ? AND is_management = 1 AND id != ?
+                 LIMIT  1",
+                [$iface['device_id'], $interfaceId]
+            );
+            if ($existing !== null) {
+                throw new \RuntimeException('This device already has a management interface.');
+            }
+        }
+
+        $name = trim($data['name']);
+        $mac  = isset($data['mac_address']) && trim($data['mac_address']) !== ''
+                    ? trim($data['mac_address'])
+                    : null;
+        $desc = isset($data['description']) && trim($data['description']) !== ''
+                    ? trim($data['description'])
+                    : null;
+
+        $this->db->execute(
+            "UPDATE device_interfaces
+             SET    name = ?, mac_address = ?, is_management = ?, description = ?
+             WHERE  id = ?",
+            [$name, $mac, $isManagement, $desc, $interfaceId]
+        );
+    }
+
+    /**
+     * Delete an interface.
+     *
+     * Integrity rules:
+     *   - The management interface may not be deleted (use edit to change its role first).
+     *   - An interface that still has addresses may not be deleted (delete addresses first).
+     *
+     * @throws \RuntimeException
+     */
+    public function deleteInterface(int $interfaceId): void
+    {
+        $iface = $this->findInterfaceById($interfaceId);
+        if ($iface === null) {
+            return; // already gone
+        }
+
+        if ((int) $iface['is_management'] === 1) {
+            throw new \RuntimeException('The management interface cannot be deleted.');
+        }
+
+        $addrCount = $this->db->fetchOne(
+            "SELECT COUNT(*) AS cnt FROM device_addresses WHERE interface_id = ?",
+            [$interfaceId]
+        );
+        if ((int) ($addrCount['cnt'] ?? 0) > 0) {
+            throw new \RuntimeException('Remove all addresses from this interface before deleting it.');
+        }
+
+        $this->db->execute("DELETE FROM device_interfaces WHERE id = ?", [$interfaceId]);
+    }
+
+    /**
+     * Create a new address on an interface.
+     *
+     * If is_primary = 1, any existing primary address on the same interface is
+     * demoted (is_primary set to 0) before the new row is inserted.
+     *
+     * The address family is auto-detected via detectFamily().
+     *
+     * Also syncs devices.host when is_primary = 1 and the interface is the management interface.
+     *
+     * @param  int   $interfaceId
+     * @param  array{address: string, is_primary?: int} $data
+     * @return int   New address ID
+     */
+    public function createAddress(int $interfaceId, array $data): int
+    {
+        $now       = date('Y-m-d H:i:s');
+        $address   = trim($data['address']);
+        $family    = $this->detectFamily($address);
+        $isPrimary = (int) ($data['is_primary'] ?? 0);
+
+        if ($isPrimary) {
+            $this->db->execute(
+                "UPDATE device_addresses SET is_primary = 0 WHERE interface_id = ?",
+                [$interfaceId]
+            );
+        }
+
+        $this->db->execute(
+            "INSERT INTO device_addresses (interface_id, address, family, is_primary, created_at)
+             VALUES (?, ?, ?, ?, ?)",
+            [$interfaceId, $address, $family, $isPrimary, $now]
+        );
+        $newId = (int) $this->db->lastInsertId();
+
+        if ($isPrimary) {
+            $this->syncHostFromInterface($interfaceId, $address);
+        }
+
+        return $newId;
+    }
+
+    /**
+     * Update an existing address.
+     *
+     * If is_primary = 1, any other primary address on the same interface is demoted.
+     * Family is re-detected from the updated address value.
+     * Also syncs devices.host when the address is/becomes the primary management address.
+     *
+     * @param  int   $addressId
+     * @param  array{address: string, is_primary?: int} $data
+     */
+    public function updateAddress(int $addressId, array $data): void
+    {
+        $addr      = $this->findAddressById($addressId);
+        $address   = trim($data['address']);
+        $family    = $this->detectFamily($address);
+        $isPrimary = (int) ($data['is_primary'] ?? 0);
+
+        if ($isPrimary) {
+            $this->db->execute(
+                "UPDATE device_addresses SET is_primary = 0 WHERE interface_id = ? AND id != ?",
+                [$addr['interface_id'], $addressId]
+            );
+        }
+
+        $this->db->execute(
+            "UPDATE device_addresses SET address = ?, family = ?, is_primary = ? WHERE id = ?",
+            [$address, $family, $isPrimary, $addressId]
+        );
+
+        if ($isPrimary) {
+            $this->syncHostFromInterface((int) $addr['interface_id'], $address);
+        }
+    }
+
+    /**
+     * Delete an address.
+     *
+     * Integrity rules:
+     *   - Cannot delete the only address on an interface.
+     *   - Cannot delete the primary address unless at least one other address exists
+     *     on the same interface (caller should promote another address first).
+     *
+     * @throws \RuntimeException
+     */
+    public function deleteAddress(int $addressId): void
+    {
+        $addr = $this->findAddressById($addressId);
+        if ($addr === null) {
+            return; // already gone
+        }
+
+        $count = $this->db->fetchOne(
+            "SELECT COUNT(*) AS cnt FROM device_addresses WHERE interface_id = ?",
+            [$addr['interface_id']]
+        );
+        $total = (int) ($count['cnt'] ?? 0);
+
+        if ($total <= 1) {
+            throw new \RuntimeException('Cannot delete the only address on an interface.');
+        }
+
+        if ((int) $addr['is_primary'] === 1) {
+            throw new \RuntimeException(
+                'This is the primary address. Promote another address to primary before deleting this one.'
+            );
+        }
+
+        $this->db->execute("DELETE FROM device_addresses WHERE id = ?", [$addressId]);
+    }
+
+    // -------------------------------------------------------------------------
     // Write
     // -------------------------------------------------------------------------
 
@@ -582,6 +856,28 @@ class DeviceRepository
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Sync devices.host from the primary address of a management interface.
+     *
+     * Called after createAddress/updateAddress when is_primary = 1.
+     * No-op when the interface is not the management interface.
+     * Transitional: keeps devices.host in sync until it is retired.
+     */
+    private function syncHostFromInterface(int $interfaceId, string $address): void
+    {
+        $iface = $this->db->fetchOne(
+            "SELECT device_id, is_management FROM device_interfaces WHERE id = ?",
+            [$interfaceId]
+        );
+        if ($iface === null || !(int) $iface['is_management']) {
+            return;
+        }
+        $this->db->execute(
+            "UPDATE devices SET host = ? WHERE id = ? AND deleted_at IS NULL",
+            [$address, (int) $iface['device_id']]
+        );
+    }
 
     /**
      * Detect the address family from a raw value.

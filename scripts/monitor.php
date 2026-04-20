@@ -1,19 +1,22 @@
 <?php
 
 /**
- * NetMon — Monitoring Runner (Phase 8)
+ * NetMon — Monitoring Runner (Phase 15)
  *
  * Performs one pass of:
  *   1. Device-level ICMP reachability checks (ping all active devices)
  *   2. Service-level TCP connectivity checks (TCP-connect all enabled services)
  *
  * Device pass: pings every active device, stores results in device_checks,
- * updates devices.status, manages stateful alerts, and dispatches notifications
- * with 15-minute throttling.
+ * updates devices.status, manages stateful alerts, dispatches log/webhook
+ * notifications with 15-minute throttling, and enqueues in-app + email
+ * notifications via the reusable Notifications module on first-open and
+ * resolved events.
  *
  * Service pass: TCP-connects every enabled service on active devices, stores
- * results in service_checks, updates monitored_services.last_state.
- * Service-level alerts are not yet implemented (Phase 9).
+ * results in service_checks, updates monitored_services.last_state, manages
+ * stateful alerts, and enqueues in-app + email notifications on first-open
+ * and resolved events.
  *
  * Usage:
  *   php scripts/monitor.php            # run one monitoring pass
@@ -23,13 +26,20 @@
  * Schedule with cron for continuous monitoring:
  *   * * * * * php /path/to/scripts/monitor.php >> /path/to/storage/logs/monitor.log 2>&1
  *
- * Limitations (Phase 9):
+ * Module notification dispatch policy (in-app + email):
+ *   - type='open'     → enqueued to ['in_app', 'email'] (alert first created)
+ *   - type='reminder' → skipped (re-confirmation — no inbox/email flood)
+ *   - resolved        → enqueued to ['in_app', 'email'] (condition cleared)
+ *   Recipients: all active users (is_active = 1).
+ *   Actual delivery is handled by the worker (scripts/notify.php), which
+ *   processes the module_notification_queue table asynchronously.
+ *
+ * Limitations:
  *   - Service checks: TCP only. No UDP, HTTP, or ICMP service checks yet.
  *   - No daemon mode — one pass per invocation.
  *   - Device checks use exec(ping). If exec() is disabled, checks are recorded
  *     as 'error' and device status/alerts are not updated.
  *   - Service checks use fsockopen() — no exec() required.
- *   - 'resolved' notifications are not yet dispatched (alert resolves silently).
  */
 
 declare(strict_types=1);
@@ -63,8 +73,12 @@ use App\Models\AlertRepository;
 use App\Models\DeviceCheckRepository;
 use App\Models\NotificationRepository;
 use App\Models\ServiceCheckRepository;
+use App\Models\UserRepository;
 use App\Monitoring\Pinger;
 use App\Monitoring\TcpChecker;
+use App\Modules\Notifications\Models\NotificationRepository as ModuleNotificationRepository;
+use App\Modules\Notifications\Models\NotificationQueueRepository;
+use App\Modules\Notifications\Services\NotificationService;
 use App\Notifications\LogChannel;
 use App\Notifications\WebhookChannel;
 
@@ -95,6 +109,33 @@ $notifRepo   = new NotificationRepository($db);
 $serviceRepo = new ServiceCheckRepository($db);
 $pinger      = new Pinger();
 $tcpChecker  = new TcpChecker();
+
+// ---------------------------------------------------------------------------
+// Notifications module — async queue dispatch
+//
+// NetMon-specific event mapping (title/body/source context) lives here, in
+// NetMon-side code.  The NotificationService and its channels know nothing
+// about devices, alerts, or any NetMon class — the module stays reusable.
+//
+// dispatch() enqueues delivery items; the worker (scripts/notify.php)
+// processes the queue asynchronously, decoupling SMTP latency and transient
+// channel failures from the monitoring runner's hot path.
+//
+// Recipient rule (Phase 1 — no preference system yet):
+//   All active users receive notifications for every alert event.
+//   This will be refined by per-user preferences in a future phase.
+//
+// Dispatch policy:
+//   type='open'     → enqueue to ['in_app', 'email']
+//   type='reminder' → skip (alert re-confirmed — no inbox/email spam)
+//   resolved        → enqueue to ['in_app', 'email']
+// ---------------------------------------------------------------------------
+$moduleNotifRepo = new ModuleNotificationRepository($db);
+$queueRepo       = new NotificationQueueRepository($db);
+$notifService    = new NotificationService($moduleNotifRepo, $queueRepo);
+
+$userRepo        = new UserRepository($db);
+$activeRecipients = $userRepo->findAllActive();
 
 // ---------------------------------------------------------------------------
 // Notification channels
@@ -259,6 +300,30 @@ foreach ($targets as $device) {
                 if ($verbose) {
                     echo "           ↳ alert #" . $openAlert['id'] . " resolved (device back online)\n";
                 }
+
+                // Dispatch a notification for the recovery (in-app + email).
+                if (!$dryRun && !empty($activeRecipients)) {
+                    $resolvedAlertId = (int) $openAlert['id'];
+
+                    $notifService->dispatch(
+                        [
+                            'source_type' => 'alert',
+                            'source_id'   => $resolvedAlertId,
+                            'title'       => "Device recovered: {$name}",
+                            'body'        => "{$name} ({$targetAddress}) is back online.",
+                            'data'        => [
+                                'alert_id'  => $resolvedAlertId,
+                                'device_id' => $id,
+                            ],
+                        ],
+                        $activeRecipients,
+                        ['in_app', 'email']
+                    );
+
+                    if ($verbose) {
+                        echo "           ↳ notification enqueued for " . count($activeRecipients) . " user(s) [in_app, email]\n";
+                    }
+                }
             }
         }
 
@@ -276,23 +341,23 @@ foreach ($targets as $device) {
 
             if ($shouldNotify($notifyAlert, $throttleSeconds)) {
                 foreach ($channels as $channel) {
-                    $result = $channel->send($notifyType, $notifyAlert, $device);
+                    $chanResult = $channel->send($notifyType, $notifyAlert, $device);
 
                     $notifRepo->record([
                         'alert_id'          => $notifyAlertId,
                         'channel'           => $channel->name(),
                         'recipient'         => $channel->recipient(),
                         'notification_type' => $notifyType,
-                        'status'            => $result['status'],
-                        'message'           => $result['message'],
+                        'status'            => $chanResult['status'],
+                        'message'           => $chanResult['message'],
                         'sent_at'           => $timestamp,
                     ]);
 
                     if ($verbose) {
-                        $icon = $result['status'] === 'sent' ? '✓' : '✗';
+                        $icon = $chanResult['status'] === 'sent' ? '✓' : '✗';
                         echo "           ↳ notify [{$channel->name()}] {$icon} {$notifyType}";
-                        if ($result['message'] !== null) {
-                            echo " ({$result['message']})";
+                        if ($chanResult['message'] !== null) {
+                            echo " ({$chanResult['message']})";
                         }
                         echo "\n";
                     }
@@ -300,6 +365,36 @@ foreach ($targets as $device) {
 
                 // Stamp the alert so the throttle window resets.
                 $alertRepo->updateAlert($notifyAlertId, ['last_notified_at' => $timestamp]);
+            }
+        }
+
+        // ---- Module notification (in-app + email) -----------------------
+        // Only dispatch on 'open' (first alert creation), never on reminders.
+        // Resolution notifications are dispatched at the resolve site above.
+        if ($pendingNotification !== null
+            && $pendingNotification['type'] === 'open'
+            && !$dryRun
+            && !empty($activeRecipients)
+        ) {
+            $notifyAlertId = (int) $pendingNotification['alert']['id'];
+
+            $notifService->dispatch(
+                [
+                    'source_type' => 'alert',
+                    'source_id'   => $notifyAlertId,
+                    'title'       => "Device offline: {$name}",
+                    'body'        => "{$name} ({$targetAddress}) failed its reachability check.",
+                    'data'        => [
+                        'alert_id'  => $notifyAlertId,
+                        'device_id' => $id,
+                    ],
+                ],
+                $activeRecipients,
+                ['in_app', 'email']
+            );
+
+            if ($verbose) {
+                echo "           ↳ notification enqueued for " . count($activeRecipients) . " user(s) [in_app, email]\n";
             }
         }
         // -----------------------------------------------------------------
@@ -455,6 +550,31 @@ if ($totalServices > 0) {
                     if ($verbose) {
                         echo "           ↳ alert #" . $openAlert['id'] . " resolved (service back up)\n";
                     }
+
+                    // Dispatch a notification for the recovery (in-app + email).
+                    if (!$dryRun && !empty($activeRecipients)) {
+                        $resolvedAlertId = (int) $openAlert['id'];
+
+                        $notifService->dispatch(
+                            [
+                                'source_type' => 'alert',
+                                'source_id'   => $resolvedAlertId,
+                                'title'       => "Service restored: {$deviceName} / {$serviceName}",
+                                'body'        => "{$serviceName} on {$deviceName} ({$targetAddress}:{$port}) is responding again.",
+                                'data'        => [
+                                    'alert_id'   => $resolvedAlertId,
+                                    'device_id'  => $deviceId,
+                                    'service_id' => $serviceId,
+                                ],
+                            ],
+                            $activeRecipients,
+                            ['in_app', 'email']
+                        );
+
+                        if ($verbose) {
+                            echo "           ↳ notification enqueued for " . count($activeRecipients) . " user(s) [in_app, email]\n";
+                        }
+                    }
                 }
             }
 
@@ -480,23 +600,23 @@ if ($totalServices > 0) {
 
                 if ($shouldNotify($notifyAlert, $throttleSeconds)) {
                     foreach ($channels as $channel) {
-                        $notifResult = $channel->send($notifyType, $notifyAlert, $deviceContext);
+                        $chanResult = $channel->send($notifyType, $notifyAlert, $deviceContext);
 
                         $notifRepo->record([
                             'alert_id'          => $notifyAlertId,
                             'channel'           => $channel->name(),
                             'recipient'         => $channel->recipient(),
                             'notification_type' => $notifyType,
-                            'status'            => $notifResult['status'],
-                            'message'           => $notifResult['message'],
+                            'status'            => $chanResult['status'],
+                            'message'           => $chanResult['message'],
                             'sent_at'           => $timestamp,
                         ]);
 
                         if ($verbose) {
-                            $icon = $notifResult['status'] === 'sent' ? '✓' : '✗';
+                            $icon = $chanResult['status'] === 'sent' ? '✓' : '✗';
                             echo "           ↳ notify [{$channel->name()}] {$icon} {$notifyType}";
-                            if ($notifResult['message'] !== null) {
-                                echo " ({$notifResult['message']})";
+                            if ($chanResult['message'] !== null) {
+                                echo " ({$chanResult['message']})";
                             }
                             echo "\n";
                         }
@@ -504,6 +624,37 @@ if ($totalServices > 0) {
 
                     // Stamp the alert so the throttle window resets.
                     $alertRepo->updateAlert($notifyAlertId, ['last_notified_at' => $timestamp]);
+                }
+            }
+
+            // ---- Module notification (in-app + email) -----------------------
+            // Only dispatch on 'open' (first alert creation), never on reminders.
+            // Resolution notifications are dispatched at the resolve site above.
+            if ($svcPendingNotification !== null
+                && $svcPendingNotification['type'] === 'open'
+                && !$dryRun
+                && !empty($activeRecipients)
+            ) {
+                $notifyAlertId = (int) $svcPendingNotification['alert']['id'];
+
+                $notifService->dispatch(
+                    [
+                        'source_type' => 'alert',
+                        'source_id'   => $notifyAlertId,
+                        'title'       => "Service down: {$deviceName} / {$serviceName}",
+                        'body'        => "{$serviceName} on {$deviceName} ({$targetAddress}:{$port}) is not responding.",
+                        'data'        => [
+                            'alert_id'   => $notifyAlertId,
+                            'device_id'  => $deviceId,
+                            'service_id' => $serviceId,
+                        ],
+                    ],
+                    $activeRecipients,
+                    ['in_app', 'email']
+                );
+
+                if ($verbose) {
+                    echo "           ↳ notification enqueued for " . count($activeRecipients) . " user(s) [in_app, email]\n";
                 }
             }
             // -----------------------------------------------------------------

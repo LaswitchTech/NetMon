@@ -1,8 +1,8 @@
 # Alerts
 
-> **Status (Phase 10):** Device-level (`device_offline`) and service-level (`service_down`) alerts are both implemented with full notification integration. The browser UI now includes an alert detail page, service context in the list, and Acknowledge/Suppress actions. Resolved notifications and escalation are planned but not yet built.
+> **Status:** Device-level (`device_offline`) and service-level (`service_down`) alerts are both implemented with full notification integration. Alert open and resolved events dispatch in-app and email notifications to all active users via the reusable Notifications module. The browser UI includes an alert detail page, service context in the list, Acknowledge/Suppress actions, and a Notes section.
 >
-> Related: [monitoring.md](monitoring.md) · [services.md](services.md) · [notifications.md](notifications.md) · [domain-model.md](domain-model.md) · [schema.md](schema.md)
+> Related: [monitoring.md](monitoring.md) · [services.md](services.md) · [notifications.md](notifications.md) · [notifications-module.md](notifications-module.md) · [notes-module.md](notes-module.md) · [domain-model.md](domain-model.md) · [schema.md](schema.md)
 
 ---
 
@@ -172,6 +172,8 @@ For each device:
     5. Notification block:
          if $pendingNotification set AND channels configured AND throttle elapsed:
              dispatch → record in notification_history → update last_notified_at
+             if type == 'open' or type == 'resolved':
+                 NotificationService::dispatch() → in-app inbox for all active users
 ```
 
 ### Service pass
@@ -189,7 +191,11 @@ For each service:
     5. Notification block:
          if $svcPendingNotification set AND channels configured AND throttle elapsed:
              dispatch → record in notification_history → update last_notified_at
+             if type == 'open' or type == 'resolved':
+                 NotificationService::dispatch() → in-app inbox for all active users
 ```
+
+**Dispatch policy:** `type === 'open'` and resolved events dispatch to `['in_app', 'email']`. `type === 'reminder'` (throttled re-confirmations) do **not** dispatch — this prevents inbox/email flooding while a device is continuously offline. Email delivery requires `NOTIFY_EMAIL_ENABLED=true` in `config/local.php`; if email is not configured, deliveries are recorded as `skipped` and in-app delivery continues unaffected.
 
 **Dry-run mode** (`--dry-run`) skips all DB writes including alert and notification operations.
 
@@ -198,13 +204,16 @@ For each service:
   [OFFLINE]  File Server              192.168.1.10         —
              ↳ alert #3 opened: device_offline
              ↳ notify [log] ✓ open
+             ↳ in-app notification dispatched to 1 user(s)
 
   [DOWN]   File Server / SSH          192.168.1.10:22      —
              ↳ alert #7 opened: service_down
              ↳ notify [log] ✓ open
+             ↳ in-app notification dispatched to 1 user(s)
 
   [UP]     File Server / SSH          192.168.1.10:22      8 ms
              ↳ alert #7 resolved (service back up)
+             ↳ in-app notification dispatched to 1 user(s)
 ```
 
 ---
@@ -238,6 +247,8 @@ The Alerts page is reachable from the sidebar navigation.
 |-----|------------------|-------|
 | `/alerts` or `/alerts?filter=open` | `findAllOpen()` | All currently open alerts, newest `last_seen_at` first |
 | `/alerts?filter=all` | `findRecent(100)` | The 100 most recent alerts of any status |
+
+The **Open** / **All** toggle is rendered inside the DataTables Buttons area (top-left of the table) via the `initComplete` callback — not as a standalone toolbar above the card. The active filter receives the `btn-primary` class; the inactive one gets `btn-outline-secondary`. This keeps the filter visually integrated with the table controls.
 
 #### Columns
 
@@ -280,6 +291,18 @@ Both actions redirect back to the alert detail page after the transition. Both a
 
 Columns: Sent at, Channel, Type, Status (badge), Message. Sourced from `NotificationRepository::findRecentByAlert()` (most recent 20 rows).
 
+#### Notes section
+
+A Notes card is rendered after the notification history table, using the shared `partials/notes-section.php` partial.
+
+- **Entity type:** `alert`
+- **Routes:** `POST /alerts/{id}/notes`, `POST /alerts/{id}/notes/{noteId}/delete`
+- **Controller methods:** `AlertController::addNote()`, `AlertController::deleteNote()`
+- Notes are author-owned and can only be deleted by their author (or an admin in a future enhancement)
+- Notes survive alert deletion: the `notes` table has no FK cascade to `alerts`
+
+See [notes-module.md](notes-module.md) for full Notes module documentation.
+
 ---
 
 ## What Remains
@@ -290,7 +313,10 @@ Columns: Sent at, Channel, Type, Status (badge), Message. Sourced from `Notifica
 | ~~`acknowledged` / `suppressed` UI~~ | Done — POST routes and detail page implemented in Phase 10 |
 | ~~Alert detail view~~ | Done — `/alerts/{id}` with overview, actions, and notification history |
 | ~~Alerts UI — service column~~ | Done — Service column added to list; device name links to detail page |
-| `resolved` notification | Alerts resolve silently; no notification dispatched on recovery |
-| Service name in notification payload | Channels currently receive device context only; service name / port not surfaced |
-| Email channel | Requires SMTP configuration; not yet built. See [notifications.md](notifications.md). |
+| ~~Open/All filter in DataTables buttons~~ | Done — filter toggle rendered via `initComplete` inside `.dt-buttons` |
+| ~~Notes on alerts~~ | Done — notes section added to `/alerts/{id}` in Phase 14 |
+| ~~In-app notifications~~ | Done — alert open/resolved events dispatch to in-app inbox (Phase 15) |
+| ~~Email channel~~ | Done — SMTP delivery implemented in EmailChannel + SmtpMailer. Configure via `config/local.php` (see [notifications-module.md](notifications-module.md)). |
+| Service name in notification payload | Channels receive device + service context; service name and port included in title. |
 | Escalation | Defined in domain model but not yet designed in detail |
+| Notification preferences | Phase 1 delivers to all active users; per-user opt-in/opt-out is deferred |

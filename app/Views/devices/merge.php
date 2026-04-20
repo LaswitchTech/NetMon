@@ -52,7 +52,7 @@
 
     <!-- Source device summary -->
     <div class="col-md-5">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body">
                 <h6 class="card-subtitle text-muted text-uppercase fw-semibold mb-3"
                     style="font-size:.7rem;letter-spacing:.07em">Source Device (will be deactivated)</h6>
@@ -82,7 +82,7 @@
 
     <!-- Merge form -->
     <div class="col-md-7">
-        <div class="card border-0 shadow-sm">
+        <div class="card">
             <div class="card-body">
                 <h6 class="card-subtitle text-muted text-uppercase fw-semibold mb-3"
                     style="font-size:.7rem;letter-spacing:.07em">Merge Into</h6>

@@ -8,6 +8,7 @@
  *   $possibleMatches (array)  — from DiscoveryRepository::possibleMatchesForFinding();
  *                               each entry: id, name, address, match_reason, match_value
  *                               empty array if no suggestions
+ *   $notes           (array)  — rows from NoteRepository::findByEntity('finding', $findingId)
  *   $user, $permissions, $appName, $displayName
  */
 
@@ -67,8 +68,8 @@ $hasError = isset($_GET['error']);
          Left: Finding overview
          ====================================================== -->
     <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-bottom-0 pt-3 pb-2 px-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent pt-3 pb-2 px-4">
                 <h2 class="h6 fw-semibold mb-0">Finding Details</h2>
             </div>
             <div class="card-body px-4 pb-4">
@@ -131,8 +132,8 @@ $hasError = isset($_GET['error']);
          Right: Actions
          ====================================================== -->
     <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-bottom-0 pt-3 pb-2 px-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent pt-3 pb-2 px-4">
                 <h2 class="h6 fw-semibold mb-0">Actions</h2>
             </div>
             <div class="card-body px-4 pb-4">
@@ -234,8 +235,8 @@ $hasError = isset($_GET['error']);
 
 <?php if (!empty($possibleMatches)): ?>
 <!-- Possible matches (suggestion only — never automatic) -->
-<div class="card border-0 shadow-sm mt-4" style="border-left: 3px solid #ffc107 !important">
-    <div class="card-header bg-transparent border-bottom-0 pt-3 pb-2 px-4">
+<div class="card card-accent-warning mt-4">
+    <div class="card-header bg-transparent pt-3 pb-2 px-4">
         <div class="d-flex align-items-start gap-2">
             <i class="bi bi-lightbulb text-warning mt-1 flex-shrink-0"></i>
             <div>
@@ -251,7 +252,7 @@ $hasError = isset($_GET['error']);
     <div class="card-body px-4 pb-4 pt-0">
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-2">
-                <thead class="table-light">
+                <thead>
                     <tr>
                         <th style="width:28%">Device</th>
                         <th style="width:22%">Address</th>
@@ -303,3 +304,9 @@ $hasError = isset($_GET['error']);
     </div>
 </div>
 <?php endif; ?>
+
+<?php
+// ── Notes section ─────────────────────────────────────────────────────────
+$noteBaseUrl = '/discovery/' . $findingId;
+require __DIR__ . '/../partials/notes-section.php';
+?>

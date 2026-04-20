@@ -1,10 +1,11 @@
 # Monitoring Subsystem
 
-> **Status (Phase 10):** Device-level ICMP checks and service-level TCP checks are both implemented with full alert and notification integration. The device detail page now includes latency and status graphs rendered with Chart.js. HTTP checks, service CRUD UI, and retention policies are planned.
+> **Status (Phase 15):** Device-level ICMP checks and service-level TCP checks are both implemented with full alert and in-app notification integration. Alert open and resolved events now dispatch in-app notifications to all active users via the reusable Notifications module. The device detail page includes latency and status graphs rendered with Chart.js. HTTP checks, service CRUD UI, and email notifications are deferred.
 >
 > For service-specific documentation see [services.md](services.md).
+> For in-app notification inbox documentation see [notifications-module.md](notifications-module.md).
 >
-> Related: [services.md](services.md) · [devices.md](devices.md) · [domain-model.md](domain-model.md) · [schema.md](schema.md)
+> Related: [services.md](services.md) · [devices.md](devices.md) · [alerts.md](alerts.md) · [notifications-module.md](notifications-module.md) · [domain-model.md](domain-model.md) · [schema.md](schema.md)
 
 ---
 
@@ -23,6 +24,8 @@ The monitoring subsystem performs periodic reachability checks against active de
 ```
 scripts/monitor.php
     ↓  bootstrap (db + autoloader)
+    ↓  NotificationService + InAppChannel instantiated once
+    ↓  UserRepository::findAllActive() → $activeRecipients (loaded once, reused)
 
 --- Device pass ---
 DeviceCheckRepository::findMonitoringTargets()
@@ -33,7 +36,9 @@ for each device:
     DeviceCheckRepository::saveCheck()        → device_checks (append)
     DeviceCheckRepository::updateDeviceStatus() → devices.status + last_check_at
     AlertRepository::findOpenAlert / createAlert / incrementOccurrence / resolveAlert
-    NotificationRepository::record + channels (throttled)
+    NotificationRepository::record + channels (throttled)   → notification_history
+    if type == 'open' or resolved:
+        NotificationService::dispatch()                     → module_notifications + deliveries
 
 --- Service pass ---
 ServiceCheckRepository::findServiceTargets()
@@ -43,7 +48,25 @@ for each service:
         ↓  fsockopen() → {status, latency_ms, message}
     ServiceCheckRepository::saveCheck()       → service_checks (append)
     ServiceCheckRepository::updateServiceState() → monitored_services.last_state + last_check_at
+    AlertRepository::findOpenAlert / createAlert / incrementOccurrence / resolveAlert
+    NotificationRepository::record + channels (throttled)   → notification_history
+    if type == 'open' or resolved:
+        NotificationService::dispatch()                     → module_notifications + deliveries
 ```
+
+### In-app notification dispatch policy
+
+| Condition | Action |
+|-----------|--------|
+| Alert opened (`type = 'open'`) | Dispatch in-app notification to all active users |
+| Alert resolved | Dispatch in-app notification to all active users |
+| Throttled reminder (`type = 'reminder'`) | **Skip** — no in-app dispatch; prevents inbox flooding |
+| `--dry-run` mode | Skip all dispatches |
+| No active recipients | Skip dispatch |
+
+Recipients are all users with `is_active = 1`, loaded once at monitor startup and reused for every event in the same run. This is the Phase 1 rule — a per-user preference system is deferred.
+
+The in-app dispatch is handled by `App\Modules\Notifications\Services\NotificationService` and writes to `module_notifications` + `module_notification_deliveries`. It is completely independent of the existing `notification_history` table used by the log/webhook channels.
 
 See [services.md](services.md) for full service-pass documentation.
 
@@ -341,7 +364,7 @@ PHP emits one `makeLatencyChart()` + `makeStatusChart()` call pair per service i
 
 ---
 
-## Limitations (Phase 10)
+## Limitations (Phase 15)
 
 | Limitation | Notes |
 |------------|-------|
@@ -434,3 +457,6 @@ All three methods use indexed columns and return the count of deleted rows.
 | UDP checks | Protocol-specific probes required; non-trivial. |
 | Parallel runner | Performance improvement; not required for correctness. |
 | ~~Check retention~~ | Done — `scripts/cleanup.php` with config-driven thresholds. |
+| ~~In-app notifications~~ | Done — alert open/resolved events dispatch via Notifications module (Phase 15). |
+| Email notifications | Email channel stub exists; SMTP wiring deferred. |
+| Notification preferences | Phase 1 delivers to all active users; per-user opt-in/opt-out deferred. |

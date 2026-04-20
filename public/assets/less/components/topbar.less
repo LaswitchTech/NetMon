@@ -86,6 +86,30 @@
         }
     }
 
+    // Notification dropdown panel
+    .notif-panel {
+        width: 360px;
+        border: 1px solid var(--app-border);
+        border-radius: var(--app-radius);
+        background: var(--app-panel);
+        box-shadow: var(--app-shadow);
+        overflow: hidden;
+
+        @media (max-width: @breakpoint-sm) {
+            width: calc(100vw - 2rem);
+        }
+
+        .notif-panel-header {
+            background: var(--app-panel-2);
+            font-size: 0.85rem;
+        }
+
+        .notif-panel-footer {
+            background: var(--app-panel-2);
+            font-size: 0.8rem;
+        }
+    }
+
     // User avatar chip
     .topbar-user {
         display: flex;

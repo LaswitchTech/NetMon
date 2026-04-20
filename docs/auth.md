@@ -128,7 +128,9 @@ Requires `Authorization: Bearer <token>` header. Writes `principal` to container
 
 Requires the principal to hold a named permission.  
 Must run **after** `SessionAuth` or `TokenAuth`.  
-401 if no principal. 403 if principal lacks the permission.
+401 JSON if no principal. 403 JSON if principal lacks the permission.
+
+**Use for:** AJAX / JSON API routes.
 
 **Route registration syntax:**
 ```php
@@ -137,6 +139,19 @@ $router->get('/path', 'Controller@method', ['SessionAuth', 'RequirePermission:us
 
 The colon syntax `'ClassName:arg'` is parsed by the Router. The `arg` is passed as the
 second constructor parameter to the middleware instance.
+
+### `WebPermission`
+
+Requires the principal to hold a named permission.  
+Must run **after** `WebAuth`.  
+Redirects to `/auth/login` (302) if no principal is present. Renders an HTML 403 page if principal lacks the permission.
+
+**Use for:** Browser HTML routes (as opposed to AJAX/API routes). This is the HTML-friendly counterpart to `RequirePermission`.
+
+**Route registration syntax:**
+```php
+$router->get('/admin', 'Controllers\Admin\AdminController@index', ['WebAuth', 'WebPermission:admin']);
+```
 
 ---
 
@@ -275,6 +290,23 @@ return [
 | File | Route | Description |
 |---|---|---|
 | `app/Views/auth/login.php` | `GET /auth/login` | Minimal Bootstrap 5 login form. Submits via AJAX to `POST /auth/login`. Redirects to `/` on success. |
+| `app/Views/profile/index.php` | `GET /profile` | Profile page — account summary, notification preferences, API token management. Reached from topbar user menu. |
+| `app/Views/admin/index.php` | `GET /admin` | Admin landing page — stat cards and quick-nav links. Requires `admin` permission. |
+| `app/Views/admin/users.php` | `GET /admin/users` | Users list (DataTable). Requires `admin` permission. |
+| `app/Views/admin/groups.php` | `GET /admin/groups` | Groups list with member/permission counts (DataTable). Requires `admin` permission. |
+| `app/Views/admin/permissions.php` | `GET /admin/permissions` | Permissions list with group count (DataTable). Requires `admin` permission. |
+
+### Profile page and API token management UI
+
+API tokens are managed in the **Profile page** (`/profile → #api-tokens` card). The card is JavaScript-driven:
+
+- On load: calls `GET /api/tokens` to list current tokens
+- Create: `POST /api/tokens` with JSON body — raw token shown once in a reveal alert, then hidden
+- Revoke: `DELETE /api/tokens/{id}` with a confirm dialog
+
+All token API endpoints use `SessionAuth`. The `/api/tokens/*` routes are not accessible via API token authentication — this prevents bootstrap problems where a token could revoke itself.
+
+**Controller:** `app/Controllers/ProfileController.php`
 
 ---
 

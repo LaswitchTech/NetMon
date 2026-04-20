@@ -86,8 +86,8 @@ Add-on modules live under `app/Modules/{ModuleName}/` with namespace `App\Module
 | Directory | Purpose | Status |
 |---|---|---|
 | `app/Modules/Setup/` | Installation orchestration — `SetupService` (implemented); web wizard UI | Partial |
-| `app/Modules/Notes/` | Attach free-text notes to any entity (polymorphic, entity_type + entity_id) | Planned — see [notes-module.md](notes-module.md) |
-| `app/Modules/Notifications/` | User-facing in-app inbox + email delivery; decoupled from alert dispatch | Planned — see [notifications-module.md](notifications-module.md) |
+| `app/Modules/Notes/` | Attach free-text notes to any entity (polymorphic, entity_type + entity_id) | Implemented — see [notes-module.md](notes-module.md) |
+| `app/Modules/Notifications/` | User-facing in-app inbox + email delivery; decoupled from alert dispatch | Implemented (in-app channel) — see [notifications-module.md](notifications-module.md) |
 | `app/Modules/FileManager/` | Browse, upload, download files | Planned |
 | `app/Modules/DatabaseReader/` | Read and query external databases | Planned |
 | `app/Modules/Chat/` | Real-time or async messaging | Planned |
@@ -317,6 +317,58 @@ Name migration files as `{NNNN}_create_{module}_*.php` and place them in `databa
 
 ---
 
+---
+
+## UI Navigation Areas
+
+The browser shell (`app/Views/layouts/app.php`) divides the application into three navigational areas with distinct ownership rules.
+
+### Sidebar — application navigation only
+
+The sidebar contains links to application-level features (monitoring, discovery, alerting) and, for administrators, the Administration section. Personal utility items — notifications, tokens — **must not** live in the sidebar.
+
+| Section | Links | Visibility |
+|---|---|---|
+| (root) | Dashboard | All users |
+| Monitoring | Devices, Alerts, Discovery | All users |
+| Administration | Overview, Users, Groups, Permissions | Users with `admin` permission only |
+
+### Topbar — system-wide chrome
+
+The topbar contains the page title, notification bell, theme switcher, and user menu.
+
+| Element | Purpose |
+|---|---|
+| Bell icon (dropdown) | Recent in-app notifications panel (AJAX, fetches `/api/notifications/recent`) |
+| Theme switcher | Dark / light / auto |
+| User menu (dropdown) | Profile link, Sign out |
+
+### Profile page (`/profile`) — user-owned settings
+
+The Profile page is the single place where a user manages personal settings. It is reached via the topbar user menu. Controllers for this page live in `app/Controllers/ProfileController.php`.
+
+| Section | What it contains |
+|---|---|
+| Account summary | Display name, username, email |
+| Notification preferences | Per-channel enable/disable (`notification_preferences` table) |
+| API tokens | List, create, revoke via existing `/api/tokens` endpoints (JS-driven) |
+
+### Admin area (`/admin`) — system-managed settings
+
+The Admin area is the place where administrators manage system-level configuration. It lives at `/admin` and is gated by the `admin` permission via `WebPermission` middleware. See [admin.md](admin.md) for full details.
+
+| Section | URL | Status |
+|---|---|---|
+| Overview | `/admin` | Implemented (Phase 1 — read-only) |
+| Users | `/admin/users` | Implemented (Phase 1 — read-only) |
+| Groups | `/admin/groups` | Implemented (Phase 1 — read-only) |
+| Permissions | `/admin/permissions` | Implemented (Phase 1 — read-only) |
+| System settings | TBD | Planned |
+
+Full create/edit/delete management for users, groups, and permissions is deferred to a future phase.
+
+---
+
 ## See Also
 
 - [auth.md](auth.md) — Authentication and authorization
@@ -329,3 +381,4 @@ Name migration files as `{NNNN}_create_{module}_*.php` and place them in `databa
 - [install.md](install.md) — Installation guide (CLI and web wizard)
 - [setup-wizard.md](setup-wizard.md) — Web wizard UX and endpoint flow
 - [installer-architecture.md](installer-architecture.md) — Installer code architecture blueprint
+- [admin.md](admin.md) — Admin area structure, authorization, and deferred roadmap

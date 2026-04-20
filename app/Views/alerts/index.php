@@ -11,8 +11,6 @@
  *   $filter      (string)  — active filter: 'open' or 'all'
  */
 
-$count = count($alerts);
-
 /**
  * Format an alert_type slug into a readable label.
  * e.g. 'device_offline' → 'Device offline'
@@ -20,6 +18,10 @@ $count = count($alerts);
 $formatType = static function (string $type): string {
     return ucfirst(str_replace('_', ' ', $type));
 };
+
+$emptyMsg = $filter === 'open'
+    ? 'No open alerts &mdash; all devices are healthy.'
+    : 'No alerts recorded yet.';
 ?>
 
 <!-- Page heading -->
@@ -30,56 +32,23 @@ $formatType = static function (string $type): string {
     </p>
 </div>
 
-<!-- Toolbar -->
-<div class="d-flex align-items-center justify-content-between mb-3">
-    <span class="text-muted small">
-        <?php if ($filter === 'open'): ?>
-            <?= $count === 1 ? '1 open alert' : "{$count} open alerts" ?>
-        <?php else: ?>
-            <?= $count === 1 ? '1 alert' : "{$count} alerts" ?> (most recent 100)
-        <?php endif; ?>
-    </span>
-    <div class="btn-group btn-group-sm" role="group" aria-label="Alert filter">
-        <a href="/alerts?filter=open"
-           class="btn <?= $filter === 'open' ? 'btn-primary' : 'btn-outline-secondary' ?>">
-            Open
-        </a>
-        <a href="/alerts?filter=all"
-           class="btn <?= $filter === 'all' ? 'btn-primary' : 'btn-outline-secondary' ?>">
-            All
-        </a>
-    </div>
-</div>
-
 <!-- Alerts table -->
-<div class="card border-0 shadow-sm">
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
+<div class="card">
+    <div class="table-responsive p-3">
+        <table id="tbl-alerts" class="table table-hover align-middle mb-0 w-100">
+            <thead>
                 <tr>
-                    <th class="ps-4" style="width:18%">Device</th>
-                    <th style="width:15%">Type</th>
-                    <th style="width:13%">Service</th>
-                    <th style="width:10%">Status</th>
-                    <th style="width:7%" class="text-end">Count</th>
-                    <th style="width:14%">First seen</th>
-                    <th style="width:14%">Last seen</th>
-                    <th style="width:9%">Last notified</th>
+                    <th>Device</th>
+                    <th>Type</th>
+                    <th>Service</th>
+                    <th>Status</th>
+                    <th class="text-end">Count</th>
+                    <th>First seen</th>
+                    <th>Last seen</th>
+                    <th>Last notified</th>
                 </tr>
             </thead>
             <tbody>
-<?php if (empty($alerts)): ?>
-                <tr>
-                    <td colspan="8" class="text-center py-5 text-muted">
-                        <i class="bi bi-bell-slash opacity-25" style="font-size: 2.5rem; display: block; margin-bottom: .75rem"></i>
-                        <?php if ($filter === 'open'): ?>
-                            No open alerts &mdash; all devices are healthy.
-                        <?php else: ?>
-                            No alerts recorded yet.
-                        <?php endif; ?>
-                    </td>
-                </tr>
-<?php else: ?>
 <?php foreach ($alerts as $alert): ?>
 <?php
     $statusBadge = match ($alert['status']) {
@@ -105,7 +74,7 @@ $formatType = static function (string $type): string {
         : '<span class="text-muted">Never</span>';
 ?>
                 <tr>
-                    <td class="ps-4 fw-medium">
+                    <td class="fw-medium">
                         <a href="/alerts/<?= (int) $alert['id'] ?>" class="text-decoration-none">
                             <?= $deviceLabel ?>
                         </a>
@@ -123,8 +92,35 @@ $formatType = static function (string $type): string {
                     <td class="small"><?= $lastNotified ?></td>
                 </tr>
 <?php endforeach; ?>
-<?php endif; ?>
             </tbody>
         </table>
     </div>
 </div>
+
+<script>
+(function () {
+    var alertFilter = <?= json_encode($filter) ?>;
+
+    window.addEventListener('DOMContentLoaded', function () {
+        // NOTE: do NOT use initComplete to inject buttons — in DataTables 1.13.x
+        // `this` inside initComplete is settings.oApi (internal _fn* functions),
+        // not the public API.  this.table() throws TypeError.  Capture the dt
+        // return value and call dt.buttons().container() instead.
+        var dt = NetMon.dt.init('#tbl-alerts', {
+            pageLength : 25,
+            order      : [[6, 'desc']],
+            language   : { emptyTable: '<?= addslashes($emptyMsg) ?>' },
+        });
+
+        // Inject Open / All filter toggle into the DataTables buttons area (top-left)
+        var openClass = alertFilter === 'open' ? 'btn-primary' : 'btn-outline-secondary';
+        var allClass  = alertFilter === 'all'  ? 'btn-primary' : 'btn-outline-secondary';
+        dt.buttons().container().prepend(
+            '<div class="btn-group btn-group-sm me-1" role="group" aria-label="Alert filter">' +
+            '<a href="/alerts?filter=open" class="btn ' + openClass + '">Open</a>' +
+            '<a href="/alerts?filter=all"  class="btn ' + allClass  + '">All</a>'  +
+            '</div>'
+        );
+    });
+}());
+</script>

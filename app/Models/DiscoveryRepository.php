@@ -52,6 +52,115 @@ class DiscoveryRepository
     }
 
     /**
+     * Return all discovery jobs with a findings count, ordered alphabetically.
+     *
+     * @return array<int, array{
+     *   id:              int,
+     *   name:            string,
+     *   subnet:          string,
+     *   enabled:         int,
+     *   last_run_at:     string|null,
+     *   created_at:      string,
+     *   findings_count:  int
+     * }>
+     */
+    public function findAllJobs(): array
+    {
+        return $this->db->fetch(
+            "SELECT  j.id,
+                     j.name,
+                     j.subnet,
+                     j.enabled,
+                     j.last_run_at,
+                     j.created_at,
+                     COUNT(f.id) AS findings_count
+             FROM    discovery_jobs j
+             LEFT JOIN discovery_findings f ON f.job_id = j.id
+             GROUP   BY j.id, j.name, j.subnet, j.enabled, j.last_run_at, j.created_at
+             ORDER   BY j.name ASC"
+        );
+    }
+
+    /**
+     * Return a single discovery job by ID.
+     *
+     * @param  int $id
+     * @return array|null  Job row or null if not found.
+     */
+    public function findJobById(int $id): ?array
+    {
+        return $this->db->fetchOne(
+            "SELECT id, name, subnet, enabled, last_run_at, created_at
+             FROM   discovery_jobs
+             WHERE  id = ?",
+            [$id]
+        );
+    }
+
+    /**
+     * Create a new discovery job.
+     *
+     * @param  array{name: string, subnet: string, enabled: bool|int} $data
+     * @return int  New row ID
+     */
+    public function createJob(array $data): int
+    {
+        $now = date('Y-m-d H:i:s');
+
+        $this->db->execute(
+            "INSERT INTO discovery_jobs (name, subnet, enabled, created_at)
+             VALUES (?, ?, ?, ?)",
+            [
+                $data['name'],
+                $data['subnet'],
+                $data['enabled'] ? 1 : 0,
+                $now,
+            ]
+        );
+
+        return (int) $this->db->lastInsertId();
+    }
+
+    /**
+     * Update an existing discovery job.
+     *
+     * @param int   $id
+     * @param array{name: string, subnet: string, enabled: bool|int} $data
+     */
+    public function updateJob(int $id, array $data): void
+    {
+        $this->db->execute(
+            "UPDATE discovery_jobs
+             SET    name    = ?,
+                    subnet  = ?,
+                    enabled = ?
+             WHERE  id = ?",
+            [
+                $data['name'],
+                $data['subnet'],
+                $data['enabled'] ? 1 : 0,
+                $id,
+            ]
+        );
+    }
+
+    /**
+     * Delete a discovery job by ID.
+     *
+     * CASCADE DELETE on discovery_findings.job_id removes all findings for this
+     * job automatically. This is enforced at the schema level.
+     *
+     * @param int $id
+     */
+    public function deleteJob(int $id): void
+    {
+        $this->db->execute(
+            "DELETE FROM discovery_jobs WHERE id = ?",
+            [$id]
+        );
+    }
+
+    /**
      * Update the last_run_at timestamp on a discovery job.
      *
      * Called at the end of each successful job scan.

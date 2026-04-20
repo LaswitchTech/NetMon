@@ -56,7 +56,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
 
     <!-- Total Devices -->
     <div class="col-sm-6 col-xl">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-primary bg-opacity-10 text-primary flex-shrink-0">
                     <i class="bi bi-cpu fs-4"></i>
@@ -71,7 +71,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
 
     <!-- Devices Online -->
     <div class="col-sm-6 col-xl">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-success bg-opacity-10 text-success flex-shrink-0">
                     <i class="bi bi-check-circle fs-4"></i>
@@ -87,7 +87,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
     <!-- Devices Offline -->
     <div class="col-sm-6 col-xl">
         <?php $offlineClass = $devicesOffline > 0 ? 'danger' : 'secondary'; ?>
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-<?= $offlineClass ?> bg-opacity-10 text-<?= $offlineClass ?> flex-shrink-0">
                     <i class="bi bi-x-circle fs-4"></i>
@@ -105,7 +105,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
     <!-- Open Alerts -->
     <div class="col-sm-6 col-xl">
         <?php $alertClass = $openAlerts > 0 ? 'danger' : 'secondary'; ?>
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-<?= $alertClass ?> bg-opacity-10 text-<?= $alertClass ?> flex-shrink-0">
                     <i class="bi bi-bell<?= $openAlerts > 0 ? '-fill' : '' ?> fs-4"></i>
@@ -123,7 +123,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
     <!-- Services Down -->
     <div class="col-sm-6 col-xl">
         <?php $svcClass = $servicesDown > 0 ? 'warning' : 'secondary'; ?>
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-<?= $svcClass ?> bg-opacity-10 text-<?= $svcClass ?> flex-shrink-0">
                     <i class="bi bi-hdd-network fs-4"></i>
@@ -143,8 +143,8 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
 <!-- ================================================================
      Recent Alerts
      ================================================================ -->
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2 px-3">
+<div class="card mb-4">
+    <div class="card-header border-bottom d-flex align-items-center justify-content-between py-2 px-3">
         <span class="fw-medium">Recent Alerts</span>
         <a href="/alerts" class="small text-decoration-none text-primary">
             View all <i class="bi bi-arrow-right ms-1"></i>
@@ -158,14 +158,14 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
     </div>
     <?php else: ?>
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 small">
-            <thead class="table-light">
+        <table id="tbl-dash-alerts" class="table table-hover align-middle mb-0 small">
+            <thead>
                 <tr>
-                    <th class="ps-3" style="width:22%">Device</th>
-                    <th style="width:18%">Type</th>
-                    <th style="width:14%">Service</th>
-                    <th style="width:10%">Status</th>
-                    <th style="width:18%" class="text-end pe-3">Last seen</th>
+                    <th>Device</th>
+                    <th>Type</th>
+                    <th>Service</th>
+                    <th>Status</th>
+                    <th class="text-end">Last seen</th>
                 </tr>
             </thead>
             <tbody>
@@ -189,7 +189,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
         : '<span class="text-muted">&mdash;</span>';
 ?>
                 <tr>
-                    <td class="ps-3 fw-medium">
+                    <td class="fw-medium">
                         <a href="/alerts/<?= (int) $alert['id'] ?>" class="text-decoration-none">
                             <?= $deviceLabel ?>
                         </a>
@@ -201,7 +201,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
                             <?= $statusBadge['label'] ?>
                         </span>
                     </td>
-                    <td class="text-muted text-end pe-3"><?= htmlspecialchars($alert['last_seen_at']) ?></td>
+                    <td class="text-muted text-end"><?= htmlspecialchars($alert['last_seen_at']) ?></td>
                 </tr>
 <?php endforeach; ?>
             </tbody>
@@ -213,8 +213,8 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
 <!-- ================================================================
      Recent Device Checks
      ================================================================ -->
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2 px-3">
+<div class="card">
+    <div class="card-header border-bottom d-flex align-items-center justify-content-between py-2 px-3">
         <span class="fw-medium">Recent Device Checks</span>
         <a href="/devices" class="small text-decoration-none text-primary">
             View devices <i class="bi bi-arrow-right ms-1"></i>
@@ -228,13 +228,13 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
     </div>
     <?php else: ?>
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 small">
-            <thead class="table-light">
+        <table id="tbl-dash-checks" class="table table-hover align-middle mb-0 small">
+            <thead>
                 <tr>
-                    <th class="ps-3" style="width:28%">Device</th>
-                    <th style="width:14%">Status</th>
-                    <th style="width:14%" class="text-end">Latency</th>
-                    <th style="width:22%" class="text-end pe-3">Checked at</th>
+                    <th>Device</th>
+                    <th>Status</th>
+                    <th class="text-end">Latency</th>
+                    <th class="text-end">Checked at</th>
                 </tr>
             </thead>
             <tbody>
@@ -253,7 +253,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
         : '&mdash;';
 ?>
                 <tr>
-                    <td class="ps-3 fw-medium">
+                    <td class="fw-medium">
                         <a href="/devices/<?= (int) $check['device_id'] ?>" class="text-decoration-none">
                             <?= htmlspecialchars($check['device_name']) ?>
                         </a>
@@ -264,7 +264,7 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
                         </span>
                     </td>
                     <td class="text-end font-monospace"><?= $latency ?></td>
-                    <td class="text-muted text-end pe-3"><?= htmlspecialchars($check['checked_at']) ?></td>
+                    <td class="text-muted text-end"><?= htmlspecialchars($check['checked_at']) ?></td>
                 </tr>
 <?php endforeach; ?>
             </tbody>
@@ -272,3 +272,14 @@ $hasProblems = $devicesOffline > 0 || $openAlerts > 0 || $servicesDown > 0;
     </div>
     <?php endif; ?>
 </div>
+
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+    if (document.getElementById('tbl-dash-alerts')) {
+        NetMon.dt.initCompact('#tbl-dash-alerts', { order: [[4, 'desc']] });
+    }
+    if (document.getElementById('tbl-dash-checks')) {
+        NetMon.dt.initCompact('#tbl-dash-checks', { order: [[3, 'desc']] });
+    }
+});
+</script>

@@ -21,20 +21,25 @@ $ignored = $counts['ignored']  ?? 0;
 ?>
 
 <!-- Page heading -->
-<div class="mb-4">
-    <h1 class="h4 fw-semibold mb-1">Discovery</h1>
-    <p class="text-muted mb-0 small">
-        Hosts observed during subnet scans. Findings are informational — devices are never
-        created or modified automatically.
-        Run <code class="bg-light px-1 rounded">php scripts/discover.php</code> to scan.
-    </p>
+<div class="d-flex align-items-start justify-content-between mb-4 gap-3">
+    <div>
+        <h1 class="h4 fw-semibold mb-1">Discovery</h1>
+        <p class="text-muted mb-0 small">
+            Hosts observed during subnet scans. Findings are informational — devices are never
+            created or modified automatically.
+            Run <code>php scripts/discover.php</code> to scan.
+        </p>
+    </div>
+    <a href="/discovery/jobs" class="btn btn-sm btn-outline-secondary flex-shrink-0">
+        <i class="bi bi-gear me-1"></i>Manage Jobs
+    </a>
 </div>
 
 <!-- Status strip -->
 <div class="row g-3 mb-4">
 
     <div class="col-sm-6 col-xl-3">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-primary bg-opacity-10 text-primary flex-shrink-0">
                     <i class="bi bi-search fs-4"></i>
@@ -49,7 +54,7 @@ $ignored = $counts['ignored']  ?? 0;
 
     <div class="col-sm-6 col-xl-3">
         <?php $pendingColor = $pending > 0 ? 'warning' : 'secondary'; ?>
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-<?= $pendingColor ?> bg-opacity-10 text-<?= $pendingColor ?> flex-shrink-0">
                     <i class="bi bi-hourglass-split fs-4"></i>
@@ -63,7 +68,7 @@ $ignored = $counts['ignored']  ?? 0;
     </div>
 
     <div class="col-sm-6 col-xl-3">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-success bg-opacity-10 text-success flex-shrink-0">
                     <i class="bi bi-link-45deg fs-4"></i>
@@ -77,7 +82,7 @@ $ignored = $counts['ignored']  ?? 0;
     </div>
 
     <div class="col-sm-6 col-xl-3">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="rounded p-2 bg-secondary bg-opacity-10 text-secondary flex-shrink-0">
                     <i class="bi bi-slash-circle fs-4"></i>
@@ -93,39 +98,21 @@ $ignored = $counts['ignored']  ?? 0;
 </div>
 
 <!-- Findings table -->
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2 px-3">
-        <span class="fw-medium">
-            Findings
-            <?php if ($total > 0): ?>
-                <span class="text-muted fw-normal small ms-1">(most recent <?= $total ?>)</span>
-            <?php endif; ?>
-        </span>
+<div class="card">
+    <div class="card-header border-bottom d-flex align-items-center justify-content-between py-2 px-3">
+        <span class="fw-medium">Findings</span>
     </div>
-
-    <?php if (empty($findings)): ?>
-    <div class="card-body text-center py-5 text-muted">
-        <i class="bi bi-radar opacity-25 d-block mb-2" style="font-size: 2.5rem"></i>
-        No findings yet.
-        <br>
-        <span class="small mt-1 d-block">
-            Create a discovery job and run
-            <code class="bg-light px-1 rounded">php scripts/discover.php</code>
-            to start scanning.
-        </span>
-    </div>
-    <?php else: ?>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 small">
-            <thead class="table-light">
+    <div class="table-responsive p-3">
+        <table id="tbl-findings" class="table table-hover align-middle mb-0 small w-100">
+            <thead>
                 <tr>
-                    <th class="ps-3" style="width:15%">IP Address</th>
-                    <th style="width:16%">Hostname</th>
-                    <th style="width:15%">MAC Address</th>
-                    <th style="width:14%">Job</th>
-                    <th style="width:10%">Status</th>
-                    <th style="width:18%">Matched Device</th>
-                    <th style="width:12%" class="text-end pe-3">First Seen</th>
+                    <th>IP Address</th>
+                    <th>Hostname</th>
+                    <th>MAC Address</th>
+                    <th>Job</th>
+                    <th>Status</th>
+                    <th>Matched Device</th>
+                    <th class="text-end">First Seen</th>
                 </tr>
             </thead>
             <tbody>
@@ -154,7 +141,7 @@ $ignored = $counts['ignored']  ?? 0;
         : '<span class="text-muted">&mdash;</span>';
 ?>
             <tr>
-                <td class="ps-3 font-monospace fw-medium">
+                <td class="font-monospace fw-medium">
                     <a href="/discovery/<?= (int) $finding['id'] ?>" class="text-decoration-none">
                         <?= htmlspecialchars($finding['ip_address']) ?>
                     </a>
@@ -170,7 +157,7 @@ $ignored = $counts['ignored']  ?? 0;
                     </a>
                 </td>
                 <td><?= $deviceCell ?></td>
-                <td class="text-muted text-end pe-3">
+                <td class="text-muted text-end">
                     <?= htmlspecialchars($finding['created_at']) ?>
                 </td>
             </tr>
@@ -178,5 +165,16 @@ $ignored = $counts['ignored']  ?? 0;
             </tbody>
         </table>
     </div>
-    <?php endif; ?>
 </div>
+
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+    NetMon.dt.init('#tbl-findings', {
+        pageLength : 25,
+        order      : [[6, 'desc']],
+        language   : {
+            emptyTable: 'No findings yet. Run <code>php scripts/discover.php</code> to start scanning.',
+        },
+    });
+});
+</script>

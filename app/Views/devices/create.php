@@ -24,7 +24,7 @@
     <p class="text-muted mb-0 small">Register a new network device for monitoring.</p>
 </div>
 
-<div class="card border-0 shadow-sm" style="max-width: 540px;">
+<div class="card" style="max-width: 540px;">
     <div class="card-body p-4">
         <form method="post" action="/devices" novalidate>
 

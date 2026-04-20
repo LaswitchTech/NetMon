@@ -1,9 +1,8 @@
 # Monitored Services
 
-> **Status (Phase 11):** Service-level monitoring, `service_down` alerts, and per-service history graphs are implemented.
-> TCP checks run alongside device-level ICMP checks. Check history is stored and visualized on the device detail page.
-> Alerts are deduplicated and notifications flow through the existing channel infrastructure.
-> Service CRUD UI and richer protocol checks are planned.
+> **Status (Phase 12):** Service CRUD UI is now implemented. Operators can add, edit, and delete monitored services
+> from the Device Detail page. Service-level monitoring, `service_down` alerts, and per-service history graphs remain
+> fully operational.
 >
 > Related: [monitoring.md](monitoring.md) · [alerts.md](alerts.md) · [devices.md](devices.md) · [domain-model.md](domain-model.md)
 
@@ -35,9 +34,16 @@ database/
 
 app/
     Models/
-        ServiceCheckRepository.php                 ← Target selection, check persistence, state update
+        ServiceCheckRepository.php                 ← Service CRUD + target selection + check persistence + state update
+    NetMon/Controllers/
+        DeviceController.php                       ← serviceCreateForm, serviceStore, serviceEditForm,
+                                                      serviceUpdate, serviceDelete
     Monitoring/
         TcpChecker.php                             ← TCP connectivity check via fsockopen()
+    Views/devices/
+        service_create.php                         ← Add Monitored Service form
+        service_edit.php                           ← Edit Monitored Service form
+        show.php                                   ← Device Detail — Add Service button + Edit/Delete per row
 ```
 
 ---
@@ -105,6 +111,23 @@ Append-only historical log of service check results. One row per service per mon
 ## ServiceCheckRepository
 
 **Class:** `App\Models\ServiceCheckRepository`
+
+### Operator CRUD (Phase 12)
+
+| Method | Description |
+|--------|-------------|
+| `findServiceById(int $id): ?array` | Find one monitored service by ID (any device) |
+| `createService(int $deviceId, array $data): int` | Insert a new monitored_services row; return new ID |
+| `updateService(int $serviceId, array $data): void` | Update operator-managed fields (name, protocol, port, monitoring_enabled) |
+| `deleteService(int $serviceId): void` | Hard-delete the service row; cascades to service_checks via FK |
+
+**Operator-managed fields** (form inputs): `name`, `protocol`, `port`, `monitoring_enabled`
+
+**Monitoring-managed fields** (never in forms): `last_state`, `last_check_at`, `expected_state`
+
+**Deletion note:** `deleteService()` permanently removes the service row and all its `service_checks` history via the `CASCADE DELETE` foreign key constraint. There is no soft-delete for services. Operators are warned in the delete confirmation modal.
+
+### Monitoring / UI read
 
 | Method | Description |
 |--------|-------------|
@@ -213,6 +236,61 @@ Services: 3 up, 4 down.
 
 ---
 
+## Service CRUD Browser UI (Phase 12)
+
+### Routes
+
+All routes are protected by the `WebAuth` middleware. Browser POST is used for update/delete (HTML forms do not support PUT/DELETE).
+
+| Method | Path | Controller method | Purpose |
+|--------|------|-------------------|---------|
+| GET | `/devices/{id}/services/create` | `serviceCreateForm` | Render Add Service form |
+| POST | `/devices/{id}/services` | `serviceStore` | Validate + create service |
+| GET | `/devices/services/{id}/edit` | `serviceEditForm` | Render Edit Service form |
+| POST | `/devices/services/{id}` | `serviceUpdate` | Validate + update service |
+| POST | `/devices/services/{id}/delete` | `serviceDelete` | Delete service + cascade history |
+
+Route registration order: service routes are registered **before** `/devices/{id}` in `routes/web.php` so the literal `services` segment is not captured by the `{id}` wildcard.
+
+### Form fields
+
+| Field | Type | Editable | Notes |
+|-------|------|----------|-------|
+| `name` | text (max 128) | Yes | Human label, e.g. SSH, HTTPS |
+| `protocol` | select | Yes | `tcp` only in Phase 8; validated against `NETMON_SERVICE_PROTOCOLS` constant |
+| `port` | number (1–65535) | Yes | TCP port |
+| `monitoring_enabled` | checkbox | Yes | Unchecked = paused (service is not picked up by runner) |
+| `last_state` | — | **No** | Displayed read-only on the Edit form; never a form input |
+| `last_check_at` | — | **No** | Displayed read-only on the Edit form; never a form input |
+| `expected_state` | — | **No** | Hardcoded to `up` on create; not exposed in forms |
+
+### Validation rules
+
+- `name`: required, max 128 chars
+- `protocol`: must be in `NETMON_SERVICE_PROTOCOLS` (`['tcp']` currently)
+- `port`: required, integer 1–65535
+
+Validation is performed in `DeviceController::validateService()`. Form re-renders at HTTP 422 with inline field errors on failure.
+
+### Protocol extensibility
+
+Supported protocols are controlled by the `NETMON_SERVICE_PROTOCOLS` constant defined at the top of `DeviceController.php`. Adding `'http'` to this array will make it available in the protocol select dropdown without changing any view code.
+
+```php
+define('NETMON_SERVICE_PROTOCOLS', ['tcp']); // extend here when HTTP/UDP checkers land
+```
+
+### Device Detail page
+
+The Monitored Services table on `/devices/{id}` now includes:
+
+- **Add Service** button in the section header → links to `/devices/{id}/services/create`
+- **Edit** icon per row → links to `/devices/services/{id}/edit`
+- **Delete** icon per row → opens a Bootstrap modal confirming the destructive action (warns that check history is also deleted)
+- Service history graphs and current-state badges are preserved unchanged
+
+---
+
 ## Device Detail Page
 
 The device detail page (`GET /devices/{id}`) includes:
@@ -297,15 +375,16 @@ See [alerts.md](alerts.md) for the full alert lifecycle and deduplication design
 
 ---
 
-## What Remains Before Service CRUD and Richer Checks
+## What Remains
 
 | Item | Notes |
 |------|-------|
 | ~~Service-level alerts~~ | Done — `service_down` wired in Phase 9 |
 | ~~Service notifications~~ | Done — existing log/webhook channels triggered automatically |
 | ~~Service uptime graphs~~ | Done — latency + status charts on device detail page (Phase 11) |
-| Service CRUD UI | `monitored_services` rows currently created only via seed/SQL. |
+| ~~Service CRUD UI~~ | Done — Add/Edit/Delete from Device Detail page (Phase 12) |
 | Service name in notification payload | Channels receive device context only; service name/port not yet surfaced. |
 | HTTP/HTTPS checks | `HttpChecker` class; HTTP status code validation; redirect handling. |
 | UDP checks | Non-trivial — UDP has no connection concept; requires protocol-specific probes. |
 | Check retention policy | `service_checks` grows unboundedly; add purge or cap per service. |
+| Soft-delete for services | Currently hard-delete (cascades history). Could add `deleted_at` if history preservation is required. |

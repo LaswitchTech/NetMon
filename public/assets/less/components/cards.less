@@ -76,16 +76,45 @@
     }
 }
 
-// ── Section label (card sub-heading) ────────────────────────
-// Replaces the inline style pattern:
-//   style="font-size:.7rem;letter-spacing:.07em;text-transform:uppercase"
-// Use as: <h6 class="section-label mb-3">Title</h6>
+// ── Section label (intra-card sub-heading) ───────────────────
+// Use for secondary headings WITHIN a card body.
+// e.g. <h6 class="section-label mb-3">Interfaces &amp; Addresses</h6>
+//
+// For primary card panel titles inside .card-header, use .card-panel-title.
 .section-label {
     font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--app-text-muted);
+    margin-bottom: 0;  // callers control spacing with mb-* utilities
+}
+
+// ── Page section label (between-card grouping heading) ───────
+// Use between logical groups of cards on a content page.
+// e.g. <h6 class="page-section-label mt-4 mb-3">Network Structure</h6>
+//
+// Provides a visual break between major sections without adding extra nesting.
+.page-section-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+    border-bottom: 1px solid var(--app-border);
+    padding-bottom: 0.4rem;
+    margin-bottom: 0;  // callers control spacing with mb-* utilities
+}
+
+// ── Card panel title (primary heading inside .card-header) ───
+// Consistent heading style for cards that use Bootstrap .card-header.
+// Use as: <h2 class="card-panel-title">Title</h2>
+.card-panel-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--app-text);
+    margin: 0;
+    line-height: 1.4;
 }
 
 // ── Card accent borders ───────────────────────────────────────

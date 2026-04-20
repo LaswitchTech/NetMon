@@ -9,6 +9,7 @@
  *   $displayName   (string)  — display_name if set, otherwise username
  *   $alert         (array)   — row from AlertRepository::findById (includes device_name, service_name, service_port)
  *   $notifications (array)   — rows from NotificationRepository::findRecentByAlert
+ *   $notes         (array)   — rows from NoteRepository::findByEntity('alert', $alertId)
  */
 
 $alertId = (int) $alert['id'];
@@ -60,8 +61,8 @@ $hasService = isset($alert['service_name']) && $alert['service_name'] !== null;
 
     <!-- Overview card -->
     <div class="col-lg-7">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-bottom-0 pt-3 pb-2 px-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent pt-3 pb-2 px-4">
                 <h2 class="h6 fw-semibold mb-0">Overview</h2>
             </div>
             <div class="card-body px-4 pb-4">
@@ -115,8 +116,8 @@ $hasService = isset($alert['service_name']) && $alert['service_name'] !== null;
 
     <!-- Status & actions card -->
     <div class="col-lg-5">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-bottom-0 pt-3 pb-2 px-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent pt-3 pb-2 px-4">
                 <h2 class="h6 fw-semibold mb-0">Status &amp; Actions</h2>
             </div>
             <div class="card-body px-4 pb-4">
@@ -165,29 +166,22 @@ $hasService = isset($alert['service_name']) && $alert['service_name'] !== null;
 
 <!-- Notification history -->
 <div class="mt-4">
-    <div class="card border-0 shadow-sm">
-        <div class="card-header bg-transparent border-bottom-0 pt-3 pb-2 px-4">
+    <div class="card">
+        <div class="card-header bg-transparent pt-3 pb-2 px-4">
             <h2 class="h6 fw-semibold mb-0">Notification History</h2>
         </div>
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+        <div class="table-responsive p-3">
+            <table id="tbl-notifications" class="table table-hover align-middle mb-0 w-100">
+                <thead>
                     <tr>
-                        <th class="ps-4" style="width:20%">Sent at</th>
-                        <th style="width:15%">Channel</th>
-                        <th style="width:15%">Type</th>
-                        <th style="width:10%">Status</th>
+                        <th>Sent at</th>
+                        <th>Channel</th>
+                        <th>Type</th>
+                        <th>Status</th>
                         <th>Message</th>
                     </tr>
                 </thead>
                 <tbody>
-<?php if (empty($notifications)): ?>
-                    <tr>
-                        <td colspan="5" class="text-center py-4 text-muted small">
-                            No notifications sent for this alert yet.
-                        </td>
-                    </tr>
-<?php else: ?>
 <?php foreach ($notifications as $n): ?>
 <?php
     $nStatusBadge = $n['status'] === 'sent'
@@ -195,7 +189,7 @@ $hasService = isset($alert['service_name']) && $alert['service_name'] !== null;
         : ['class' => 'bg-danger',  'label' => 'Failed'];
 ?>
                     <tr>
-                        <td class="ps-4 small"><?= htmlspecialchars($n['sent_at']) ?></td>
+                        <td class="small"><?= htmlspecialchars($n['sent_at']) ?></td>
                         <td class="small"><?= htmlspecialchars($n['channel']) ?></td>
                         <td class="small"><?= htmlspecialchars(ucfirst($n['notification_type'])) ?></td>
                         <td>
@@ -206,9 +200,31 @@ $hasService = isset($alert['service_name']) && $alert['service_name'] !== null;
                         </td>
                     </tr>
 <?php endforeach; ?>
-<?php endif; ?>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
+
+<?php
+// ── Notes section ─────────────────────────────────────────────────────────
+$noteBaseUrl = '/alerts/' . $alertId;
+require __DIR__ . '/../partials/notes-section.php';
+?>
+
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+    // buttons:null + dom without B: this table needs no action buttons; passing
+    // buttons:null prevents the Buttons extension from creating an empty container.
+    NetMon.dt.init('#tbl-notifications', {
+        pageLength : 10,
+        lengthMenu : [10, 25, 50],
+        order      : [[0, 'desc']],
+        language   : { emptyTable: 'No notifications sent for this alert yet.' },
+        buttons    : null,
+        dom        : "<'row g-2 align-items-center mb-2'<'col-sm-4 ms-auto'f>>" +
+                     "rt" +
+                     "<'row g-2 align-items-center mt-2'<'col-sm-4'l><'col-sm-4 text-center'i><'col-sm-4'p>>",
+    });
+});
+</script>

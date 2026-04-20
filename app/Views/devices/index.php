@@ -11,7 +11,6 @@
  *                            `address` (resolved from device_addresses, or devices.host fallback)
  */
 
-$count = count($devices);
 ?>
 
 <!-- Page heading -->
@@ -22,40 +21,20 @@ $count = count($devices);
     </p>
 </div>
 
-<!-- Toolbar -->
-<div class="d-flex align-items-center justify-content-between mb-3">
-    <span class="text-muted small">
-        <?= $count === 1 ? '1 device' : "{$count} devices" ?>
-    </span>
-    <a href="/devices/create" class="btn btn-sm btn-primary">
-        <i class="bi bi-plus-lg me-1"></i>Add Device
-    </a>
-</div>
-
 <!-- Device table -->
-<div class="card border-0 shadow-sm">
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
+<div class="card">
+    <div class="table-responsive p-3">
+        <table id="tbl-devices" class="table table-hover align-middle mb-0 w-100">
+            <thead>
                 <tr>
-                    <th class="ps-4" style="width:28%">Name</th>
-                    <th style="width:22%">Host / IP</th>
-                    <th style="width:18%">Status</th>
-                    <th style="width:20%">Last Check</th>
-                    <th style="width:12%" class="text-end pe-4">Actions</th>
+                    <th>Name</th>
+                    <th>Host / IP</th>
+                    <th>Status</th>
+                    <th>Last Check</th>
+                    <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
-<?php if (empty($devices)): ?>
-                <tr>
-                    <td colspan="5" class="text-center py-5 text-muted">
-                        <i class="bi bi-cpu opacity-25" style="font-size: 2.5rem; display: block; margin-bottom: .75rem"></i>
-                        No devices configured yet.
-                        <br>
-                        <a href="/devices/create" class="small">Add your first device</a>
-                    </td>
-                </tr>
-<?php else: ?>
 <?php foreach ($devices as $device): ?>
 <?php
     // Map status to a Bootstrap badge colour
@@ -70,7 +49,7 @@ $count = count($devices);
     $deviceId = (int) $device['id'];
 ?>
                 <tr>
-                    <td class="ps-4 fw-medium">
+                    <td class="fw-medium">
                         <a href="/devices/<?= $deviceId ?>" class="text-decoration-none text-reset">
                             <?= htmlspecialchars($device['name']) ?>
                         </a>
@@ -82,7 +61,7 @@ $count = count($devices);
                         </span>
                     </td>
                     <td class="text-muted small"><?= $lastCheck ?></td>
-                    <td class="text-end pe-4">
+                    <td class="text-end">
                         <a href="/devices/<?= $deviceId ?>/edit"
                            class="btn btn-sm btn-outline-secondary me-1"
                            title="Edit">
@@ -100,7 +79,6 @@ $count = count($devices);
                     </td>
                 </tr>
 <?php endforeach; ?>
-<?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -131,14 +109,35 @@ $count = count($devices);
 </div>
 
 <script>
-(function () {
+window.addEventListener('DOMContentLoaded', function () {
+    // DataTables
+    // NOTE: do NOT use initComplete to inject buttons — in DataTables 1.13.x
+    // `this` inside initComplete is settings.oApi (internal _fn* functions),
+    // not the public API.  this.table() throws TypeError.  Capture the dt
+    // return value and call dt.buttons().container() instead.
+    var dt = NetMon.dt.init('#tbl-devices', {
+        pageLength : 25,
+        order      : [[0, 'asc']],
+        columnDefs : [{ orderable: false, targets: 4 }],
+        language   : {
+            emptyTable : 'No devices configured yet.',
+        },
+    });
+
+    // Inject Add Device link into the DataTables buttons area (top-left)
+    dt.buttons().container().prepend(
+        '<a href="/devices/create" class="btn btn-sm btn-primary me-1">' +
+        '<i class="bi bi-plus-lg me-1"></i>Add Device</a>'
+    );
+
+    // Delete modal — populate from data attributes
     var modal = document.getElementById('deleteModal');
     modal.addEventListener('show.bs.modal', function (event) {
-        var btn    = event.relatedTarget;
-        var id     = btn.getAttribute('data-device-id');
-        var name   = btn.getAttribute('data-device-name');
+        var btn  = event.relatedTarget;
+        var id   = btn.getAttribute('data-device-id');
+        var name = btn.getAttribute('data-device-name');
         document.getElementById('deleteDeviceName').textContent = name;
         document.getElementById('deleteForm').setAttribute('action', '/devices/' + id + '/delete');
     });
-})();
+});
 </script>

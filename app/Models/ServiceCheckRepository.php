@@ -25,6 +25,106 @@ class ServiceCheckRepository
     }
 
     // -------------------------------------------------------------------------
+    // Monitored service CRUD (operator-managed configuration)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Find a single monitored service by ID.
+     *
+     * Returns null if the service does not exist.
+     *
+     * @return array{
+     *   id: int, device_id: int, name: string, protocol: string,
+     *   port: int, monitoring_enabled: int, expected_state: string,
+     *   last_state: string|null, last_check_at: string|null, created_at: string
+     * }|null
+     */
+    public function findServiceById(int $id): ?array
+    {
+        return $this->db->fetchOne(
+            "SELECT id, device_id, name, protocol, port, monitoring_enabled,
+                    expected_state, last_state, last_check_at, created_at
+             FROM   monitored_services
+             WHERE  id = ?",
+            [$id]
+        );
+    }
+
+    /**
+     * Create a new monitored service on a device.
+     *
+     * Fields controlled by this method: name, protocol, port, monitoring_enabled.
+     * Fields NOT accepted: last_state, last_check_at (monitoring-managed).
+     * expected_state is fixed at 'up' (the only meaningful value in Phase 8).
+     *
+     * @param  int   $deviceId
+     * @param  array{name: string, protocol: string, port: int, monitoring_enabled: int} $data
+     * @return int   New service ID
+     */
+    public function createService(int $deviceId, array $data): int
+    {
+        $now = date('Y-m-d H:i:s');
+
+        $this->db->execute(
+            "INSERT INTO monitored_services
+                (device_id, name, protocol, port, monitoring_enabled, expected_state, created_at)
+             VALUES (?, ?, ?, ?, ?, 'up', ?)",
+            [
+                $deviceId,
+                trim($data['name']),
+                $data['protocol'],
+                (int) $data['port'],
+                (int) $data['monitoring_enabled'],
+                $now,
+            ]
+        );
+
+        return (int) $this->db->lastInsertId();
+    }
+
+    /**
+     * Update an existing monitored service's operator-managed fields.
+     *
+     * Only updates: name, protocol, port, monitoring_enabled.
+     * Never touches: last_state, last_check_at, expected_state (monitoring-managed).
+     *
+     * @param  int   $serviceId
+     * @param  array{name: string, protocol: string, port: int, monitoring_enabled: int} $data
+     */
+    public function updateService(int $serviceId, array $data): void
+    {
+        $this->db->execute(
+            "UPDATE monitored_services
+             SET    name = ?, protocol = ?, port = ?, monitoring_enabled = ?
+             WHERE  id = ?",
+            [
+                trim($data['name']),
+                $data['protocol'],
+                (int) $data['port'],
+                (int) $data['monitoring_enabled'],
+                $serviceId,
+            ]
+        );
+    }
+
+    /**
+     * Delete a monitored service and its check history.
+     *
+     * WARNING: Deletion is permanent and cascades to service_checks via the
+     * FOREIGN KEY ON DELETE CASCADE constraint. All historical check data for
+     * this service is also deleted. There is no soft-delete for services.
+     *
+     * @param int $serviceId
+     */
+    public function deleteService(int $serviceId): void
+    {
+        $this->db->execute(
+            "DELETE FROM monitored_services WHERE id = ?",
+            [$serviceId]
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Target selection (monitoring runner)
     // -------------------------------------------------------------------------
 

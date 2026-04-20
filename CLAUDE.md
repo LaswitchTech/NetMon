@@ -149,6 +149,30 @@ Design must evolve toward:
 - DeviceAddress (IPs)
 - DeviceService (ports/services)
 
+### Device Ownership, Custody, and Location
+
+Devices are not only technical assets — they may also be assigned and physically moved.
+
+The domain model must support these concepts:
+
+- current location
+- owner
+- current holder / assignee
+- client / user currently in possession of the equipment
+
+Rules:
+- These fields represent current operational state, not immutable history
+- Design should leave room for future history/audit tracking of moves and assignments
+- Do NOT assume devices always remain in a fixed office/network location
+- Ownership and possession are distinct concepts:
+  - owner = who owns or is responsible for the asset
+  - current holder / assignee = who currently has the equipment
+- Client/user possession must be modelled cleanly so devices can be linked to people or organizations later
+
+Implementation guidance:
+- Prefer explicit columns/relations over free-form notes for core ownership/custody state
+- Keep the design compatible with future inventory/asset-management features
+
 Avoid flattening everything into a single devices table long-term.
 
 ---
@@ -233,6 +257,25 @@ Discovery is separate from devices:
 - DiscoveryFinding (observed IP/MAC/hostname)
 
 Findings must NOT blindly create devices.
+
+### Remote Agent / Off-Network Reporting
+
+NetMon should later support devices that are not currently on the same local network as the monitoring server.
+
+Future design direction:
+- a lightweight client/agent may report status back to NetMon
+- remote reporting must coexist with LAN-based monitoring and discovery
+- agent-reported state must be clearly distinguished from directly observed local-network checks when needed
+
+Rules:
+- Do NOT assume every monitored device is reachable only by local ping/TCP checks
+- Design monitoring concepts so they can later accept multiple observation sources
+- Remote/agent reporting must remain authenticated and explicitly authorized
+- Agent design should not bypass the existing users/groups/permissions or API token model
+
+Implementation guidance:
+- Keep monitoring and check history models flexible enough for future source typing (e.g. local probe vs remote agent)
+- Leave room for a future small client application to register/report status safely
 
 ---
 
@@ -365,7 +408,7 @@ The styling system should evolve toward:
 
 NetMon will progressively extract **reusable modules** that can be shared across future applications.
 
-Two initial modules are planned:
+Reusable modules already implemented or planned:
 
 ### Notes Module (Reusable)
 
@@ -420,6 +463,136 @@ Design constraints:
 
 ---
 
+### File Manager Module (Reusable)
+
+Purpose:
+- Provide reusable file and directory management for future applications
+
+Scope:
+- list directories
+- inspect metadata
+- upload files
+- download files
+- create directories
+- delete paths
+- preview supported file types where safe
+
+Rules:
+- Must remain storage-root aware and never allow path traversal outside configured roots
+- Must separate filesystem operations from UI concerns
+- Must be reusable outside NetMon without depending on NetMon-specific models
+- Destructive actions must be explicit and confirmed
+
+Future considerations:
+- permissions per root/path
+- previews/thumbnails
+- retention rules
+- integration with Notes or Tasks
+
+---
+
+### Task Management Module (Reusable)
+
+Purpose:
+- Provide reusable task / follow-up tracking across applications
+
+Core concepts:
+- Task
+- Task status
+- Task assignment
+- Due date / reminder
+- Related entity linkage
+
+Rules:
+- Must support linking tasks to arbitrary entities (polymorphic target model preferred)
+- Must not assume NetMon-specific entities only
+- Task state transitions should be explicit and auditable
+- Reminder/notification behavior must reuse the Notifications module where appropriate
+
+Future considerations:
+- recurring tasks
+- checklists / subtasks
+- SLA tracking
+- activity history
+
+---
+
+### Chat Module (Reusable)
+
+Purpose:
+- Provide reusable real-time or near-real-time messaging between users and/or agents
+
+Core concepts:
+- Room / conversation
+- Participant membership
+- Message
+- Message author
+- Message visibility / presence later
+
+Rules:
+- Must remain decoupled from NetMon-specific domain logic
+- Must support system/agent messages distinctly from user messages
+- Message storage and room membership must be explicit
+- UI concerns (widget, dashboard chat, etc.) must stay separate from storage/message services
+
+Future considerations:
+- typing / presence
+- attachments via File Manager module
+- AI agent participation
+- message reactions / acknowledgements
+
+---
+
+### AI Agent Module (Reusable)
+
+Purpose:
+- Provide reusable orchestration for AI-assisted workflows inside applications
+
+Core concepts:
+- Agent
+- Tool access
+- Context sources
+- Message / action history
+- Safety boundaries
+
+Rules:
+- Must never bypass existing authorization rules
+- Must use explicit tool/action boundaries
+- Must keep domain-specific policy in the host application, not in the reusable module
+- Any destructive action proposed by an agent must remain confirmable or auditable
+
+Future considerations:
+- agent-per-room chat integration
+- task generation / summarization
+- monitoring incident assistance
+- workflow orchestration using Tasks, Notes, Notifications, and File Manager modules
+
+---
+
+### Parameters / Preferences / Admin Area
+
+Purpose:
+- Provide a clean separation between:
+  - user-owned settings (Profile)
+  - application/system administration (Admin / Preferences)
+
+Rules:
+- Profile is for personal settings only:
+  - account details
+  - notification preferences
+  - API tokens
+- Admin / Preferences is for administrative/system-managed areas:
+  - users
+  - groups
+  - permissions
+  - global settings
+  - future module settings
+- Do NOT mix personal profile concerns into sidebar utility blocks or admin pages
+
+Implementation guidance:
+- Prefer a dedicated `/admin` (or equivalent) area for administrative features
+- Keep admin navigation separate from normal operational navigation where practical
+
 ## Device Detail Page (NetMon-Specific)
 
 The device detail page is the **primary operational view** for a device.
@@ -456,17 +629,17 @@ Rules:
 
 When introducing these features:
 
-1. Implement Notes module first (lowest risk, high reuse)
-2. Expand device detail page to consume notes and existing monitoring data
-3. Implement Notifications module UI last (largest scope, depends on alerts system)
+1. Implement reusable modules incrementally — one module at a time
+2. Prefer low-risk, high-reuse modules first (Notes, Notifications)
+3. Expand NetMon operational pages only after the underlying reusable module or service is stable
+4. Introduce admin/preferences structure only after personal Profile UX is clean
+5. Keep Chat, AI Agent, File Manager, and Task Management as explicit module tracks — do not blend them into NetMon pages ad hoc
 
-Avoid:
-- implementing all modules at once
-- coupling reusable modules to NetMon-specific logic
 
 ---
 
 ## Dev Notes
+
 - Use /data/app.db for SQLite
 - Use /storage for logs/cache
 - Public entry point is /public/index.php
@@ -506,3 +679,13 @@ Avoid:
 - The first theme implementation must support both dark mode and light mode
 - Future themes should be addable primarily through variable/token overrides
 - DataTables is the default table layer across the application and should be themed consistently with the rest of the UI
+
+## Dev Notes
+
+- Device tracking should remain compatible with future asset/inventory features such as current location, owner, and current holder/client possession
+- Monitoring design should remain compatible with a future lightweight remote client/agent that reports status when a device is off-network
+- Future remote client/agent reporting must integrate through explicit authenticated channels, not ad hoc trust
+- Remaining major module tracks include: File Manager, Task Management, Chat, AI Agent, and Admin/Preferences UX
+- New module work should first update CLAUDE-facing and user-facing docs before broad implementation if the workflow or schema is non-trivial
+- Reusable modules should remain decoupled from NetMon-specific repositories and controllers whenever possible
+- Profile should remain user-owned settings; Admin/Preferences should remain system-managed settings
