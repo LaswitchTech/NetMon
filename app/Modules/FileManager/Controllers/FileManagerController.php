@@ -49,7 +49,7 @@ class FileManagerController extends Controller
 
         $pageTitle     = 'File Manager';
         $activeSection = 'File Manager';
-        $viewsPath     = __DIR__ . '/../../../../Views';
+        $viewsPath     = __DIR__ . '/../../../Views';
 
         ob_start();
         require $viewsPath . '/file-manager/index.php';
@@ -95,7 +95,7 @@ class FileManagerController extends Controller
         $flash        = $this->popFlash();
         $pageTitle    = 'File Manager';
         $activeSection = 'File Manager';
-        $viewsPath    = __DIR__ . '/../../../../Views';
+        $viewsPath    = __DIR__ . '/../../../Views';
 
         ob_start();
         require $viewsPath . '/file-manager/browse.php';

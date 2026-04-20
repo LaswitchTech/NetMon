@@ -279,7 +279,7 @@ class GroupController extends Controller
         $principal   = $this->container->get('principal');
         $config      = $this->container->get('config');
         $viewsPath   = __DIR__ . '/../../Views';
-        $appName     = $config->get('app.name', 'NetMon');
+        $appName     = $config['name'] ?? 'NetMon';
         $displayName = $principal['user']['display_name'] ?? $principal['user']['username'];
         $permissions = $principal['permissions'];
 

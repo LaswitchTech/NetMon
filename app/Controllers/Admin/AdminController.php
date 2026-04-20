@@ -39,7 +39,7 @@ class AdminController extends Controller
 
         $pageTitle     = 'Administration';
         $activeSection = 'Admin'; // matches sidebar "Overview" link
-        $appName       = $config->get('app.name', 'NetMon');
+        $appName       = $config['name'] ?? 'NetMon';
         $displayName   = $user['display_name'] ?? $user['username'];
         $permissions   = $perms;
 
@@ -68,7 +68,7 @@ class AdminController extends Controller
 
         $pageTitle     = 'Permissions';
         $activeSection = 'Admin Permissions';
-        $appName       = $config->get('app.name', 'NetMon');
+        $appName       = $config['name'] ?? 'NetMon';
         $displayName   = $user['display_name'] ?? $user['username'];
         $permissions   = $perms;
 
@@ -93,7 +93,7 @@ class AdminController extends Controller
 
         $pageTitle     = 'Audit Log';
         $activeSection = 'Admin Audit';
-        $appName       = $config->get('app.name', 'NetMon');
+        $appName       = $config['name'] ?? 'NetMon';
         $displayName   = $user['display_name'] ?? $user['username'];
         $permissions   = $perms;
 
