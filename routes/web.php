@@ -74,8 +74,10 @@ $router->post('/devices/{id}/merge',      'NetMon\Controllers\DeviceController@m
 
 // Admin area — requires 'admin' permission on all routes.
 // Handler prefix 'Controllers\...' resolves to App\Controllers\... via the Router's qualified-name rule.
-$router->get('/admin',       'Controllers\Admin\AdminController@index', ['WebAuth', 'WebPermission:admin']);
-$router->get('/admin/audit', 'Controllers\Admin\AdminController@audit',  ['WebAuth', 'WebPermission:admin']);
+$router->get('/admin',          'Controllers\Admin\AdminController@index',          ['WebAuth', 'WebPermission:admin']);
+$router->get('/admin/audit',    'Controllers\Admin\AdminController@audit',           ['WebAuth', 'WebPermission:admin']);
+$router->get('/admin/settings', 'Controllers\Admin\SystemSettingsController@show',   ['WebAuth', 'WebPermission:admin']);
+$router->post('/admin/settings','Controllers\Admin\SystemSettingsController@update', ['WebAuth', 'WebPermission:admin']);
 
 // Admin permissions — full CRUD.
 // NOTE: /admin/permissions/create must be before /admin/permissions/{id} so the

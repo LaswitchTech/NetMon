@@ -169,7 +169,7 @@ Currently implemented:
 │   │   │   └── HomeController.php
 │   │   ├── Models/
 │   │   └── Services/
-│   └── Services/               (reserved — global shared services if needed)
+│   └── Services/               Global shared services (SystemSettingService, etc.)
 ├── config/
 │   ├── app.php
 │   ├── auth.php
@@ -359,13 +359,16 @@ The Admin area is the place where administrators manage system-level configurati
 
 | Section | URL | Status |
 |---|---|---|
-| Overview | `/admin` | Implemented (Phase 1 — read-only) |
-| Users | `/admin/users` | Implemented (Phase 1 — read-only) |
-| Groups | `/admin/groups` | Implemented (Phase 1 — read-only) |
-| Permissions | `/admin/permissions` | Implemented (Phase 1 — read-only) |
-| System settings | TBD | Planned |
+| Overview | `/admin` | Implemented |
+| Users | `/admin/users` | Implemented (full CRUD) |
+| Groups | `/admin/groups` | Implemented (full CRUD + permission sync) |
+| Permissions | `/admin/permissions` | Implemented (full CRUD) |
+| Audit Log | `/admin/audit` | Implemented |
+| System Settings | `/admin/settings` | Implemented (Phase 1 — 4 keys) |
 
-Full create/edit/delete management for users, groups, and permissions is deferred to a future phase.
+System settings are stored in the `system_settings` table and resolved through a
+layered fallback chain: DB → `config/local.php` → `.env` → hardcoded default.
+See `app/Services/SystemSettingService.php` and [admin.md](admin.md).
 
 ---
 

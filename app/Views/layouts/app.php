@@ -119,6 +119,10 @@ $navActive = $activeSection ?? $pageTitle;
                 <i class="bi bi-journal-text sidebar-link-icon"></i>
                 <span class="sidebar-link-label">Audit Log</span>
             </a>
+            <a class="sidebar-link <?= $navActive === 'Admin Settings' ? 'active' : '' ?>" href="/admin/settings">
+                <i class="bi bi-sliders sidebar-link-icon"></i>
+                <span class="sidebar-link-label">Settings</span>
+            </a>
             <?php endif; ?>
 
         </nav>

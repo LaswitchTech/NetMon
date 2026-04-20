@@ -44,6 +44,13 @@ The `admin` permission is seeded at install time (see `database/seeds/AdminBoots
 | GET | `/admin` | `AdminController::index()` | Admin landing page — summary counts and quick nav |
 | GET | `/admin/audit` | `AdminController::audit()` | Audit log — last 500 entries, DataTable |
 
+### SystemSettingsController (system settings)
+
+| Method | Path | Controller method | Description |
+|---|---|---|---|
+| GET | `/admin/settings` | `SystemSettingsController::show()` | Display settings form with current effective values |
+| POST | `/admin/settings` | `SystemSettingsController::update()` | Validate and save settings to DB |
+
 ### PermissionController (full CRUD)
 
 | Method | Path | Controller method | Description |
@@ -94,6 +101,16 @@ Handles the landing page and audit log. Read-only.
 |---|---|---|
 | `index()` | `GET /admin` | Count of users, groups, permissions |
 | `audit()` | `GET /admin/audit` | `AuditLogRepository::findRecent(500)` |
+
+### `SystemSettingsController`
+
+**File:** `app/Controllers/Admin/SystemSettingsController.php`
+
+Owns GET and POST for `/admin/settings`. Thin controller — validation is in `validate()`, storage in `SystemSettingService`.
+
+Uses the same `ctx()` / `flash()` / `popFlash()` / `auditLog()` helper pattern as other admin controllers.
+
+Changes are logged as `settings.update` with a `system_settings` entity type (entity ID = 0; the settings table has no numeric PK).
 
 ### `PermissionController`
 
@@ -164,6 +181,56 @@ On success: calls `UserRepository::update()` for name/email, then optionally `Us
 3. If that count is zero → reject with an error flash; do not deactivate.
 
 The guard prevents a state where no active admin can log in.
+
+---
+
+## System Settings
+
+### Storage model
+
+Settings are stored in the `system_settings` table (migration 0029). Each row holds a single key–value pair:
+
+| Column | Type | Description |
+|---|---|---|
+| `key` | TEXT PK | Dotted identifier, e.g. `app.name` |
+| `value` | TEXT | String representation; booleans use `'1'`/`'0'` |
+| `created_at` | VARCHAR(32) | When first written |
+| `updated_at` | VARCHAR(32) | Last write timestamp |
+
+### Config precedence
+
+Settings are resolved through a layered fallback chain (highest → lowest):
+
+1. **DB row** — value stored in `system_settings` via Admin → Settings
+2. **`config/local.php`** — deployment-specific overrides (not committed)
+3. **`.env`** — application identity and base defaults
+4. **Hardcoded default** — compile-time fallback in `SystemSettingService`
+
+`Config::load()` is unchanged — it already implements steps 2+3. The service layer handles step 1.
+
+### Phase 1 settings
+
+| Key | Type | Config fallback | Hardcoded default |
+|---|---|---|---|
+| `app.name` | string | `Config::load('app')['name']` | `'NetMon'` |
+| `app.url` | string | `Config::load('app')['url']` | `'http://localhost'` |
+| `notifications.email_enabled` | bool | `Config::load('notifications-module')['email']['enabled']` | `false` |
+| `monitoring.check_interval` | int | *(none)* | `60` |
+
+### What is NOT managed here (intentional)
+
+- SMTP credentials — sensitive; remain in `config/local.php`
+- Database connection details — remain in `config/local.php`
+- App install state — remains in `.env` and `storage/installed.lock`
+- Per-user preferences — managed in Profile page, not Admin Settings
+
+### Repository and service
+
+**`SystemSettingRepository`** (`app/Models/SystemSettingRepository.php`): raw DB access — `get()`, `set()`, `getAll()`.
+
+**`SystemSettingService`** (`app/Services/SystemSettingService.php`): typed access with fallback chain — `getString()`, `getBool()`, `getInt()`, `get()`, `set()`, `getAll()`.
+
+Controllers that need settings call the service. Do NOT read `system_settings` directly from controllers.
 
 ---
 
@@ -361,6 +428,7 @@ The check is case-insensitive via `strtolower()` to guard against name collision
 | `app/Views/admin/groups.php` | `GET /admin/groups` | DataTable: name, description, counts, actions (edit/delete) |
 | `app/Views/admin/group-create.php` | `GET /admin/groups/create` | Create form with inline validation |
 | `app/Views/admin/group-edit.php` | `GET /admin/groups/{id}/edit` | Unified form: name/description + permission checkboxes (grouped by prefix) + read-only members + danger zone |
+| `app/Views/admin/settings.php` | `GET /admin/settings` | Settings form: app name, URL, email enabled, check interval |
 | `app/Views/admin/permissions.php` | `GET /admin/permissions` | DataTable: code, description, group_count, actions (edit) |
 | `app/Views/admin/permission-create.php` | `GET /admin/permissions/create` | Create form: code, description |
 | `app/Views/admin/permission-edit.php` | `GET /admin/permissions/{id}/edit` | Edit form + assigned groups summary + danger zone (delete, guarded) |
@@ -506,6 +574,10 @@ To add new entity types, follow the same pattern — `entity_type` is a free-for
 ## What Is Implemented
 
 - [x] `/admin` — read-only landing page
+- [x] `/admin/settings` — system settings form (app name, URL, email enabled, check interval)
+- [x] `SystemSettingRepository` — DB CRUD for `system_settings` table
+- [x] `SystemSettingService` — typed access with 4-layer fallback chain (DB → local.php → .env → default)
+- [x] Migration 0029 — `system_settings` table (key TEXT PK, value TEXT)
 - [x] `/admin/audit` — audit log DataTable (last 500 entries, actor join, meta summary)
 - [x] `AuditLogRepository::log()` / `findRecent()` — append-only, fail-silently in controllers
 - [x] `/admin/users` — list with Create / Edit Account / Edit Groups / Activate / Deactivate actions
@@ -541,6 +613,9 @@ To add new entity types, follow the same pattern — `entity_type` is a free-for
 | Item | Notes |
 |---|---|
 | Permission: split delete guard per-group | Currently only blocks if in use anywhere; future may allow inspecting which groups hold it |
+| System settings: apply `app.name` to topbar at runtime | Currently the sidebar brand reads from session-bound config; a future phase will read from SystemSettingService on each request |
+| System settings: per-section expansion | Phase 1 has 4 keys; future phases add monitoring thresholds, retention, LDAP toggle, etc. |
+| System settings: validation history / change review | No before/after diff stored yet; audit log records the submitted values |
 | Password reset (admin-initiated) | No reset token flow yet (admin sets password directly from edit-account) |
 | Session invalidation on membership change | Auth changes take effect at next login/page load |
 | Audit log: group membership changes | `user.groups_update` not yet logged (group assignment via `POST /admin/users/{id}`) |
